@@ -12,7 +12,7 @@ declare
   v_n     bigint;
   v_t     text;
 begin
-  return next plan(24);
+  return next plan(36);
 
   insert into auth.users
     (instance_id, id, aud, role, email, encrypted_password,
@@ -248,6 +248,90 @@ begin
   select count(*) into v_n from public.submissions;
   return next ok(v_n = 3,
     'Replaying a queued submission upserts rather than duplicating, saw ' || v_n);
+
+  return next lives_ok(
+    $q$ insert into storage.objects (bucket_id, name)
+        values ('attachments',
+                '11111111-1111-1111-1111-111111111111/77777777-7777-7777-7777-777777777772/IMG_0001.jpg') $q$,
+    'Collector can attach a file to their own unlocked submission');
+
+  return next throws_ok(
+    $q$ insert into storage.objects (bucket_id, name)
+        values ('attachments',
+                '11111111-1111-1111-1111-111111111111/77777777-7777-7777-7777-777777777773/IMG_0002.jpg') $q$,
+    '42501', null::text,
+    'Collector cannot attach a file to a teammate submission');
+
+  return next throws_ok(
+    $q$ insert into storage.objects (bucket_id, name)
+        values ('attachments',
+                '11111111-1111-1111-1111-111111111111/77777777-7777-7777-7777-777777777771/IMG_0003.jpg') $q$,
+    '42501', null::text,
+    'Collector cannot attach a file to a locked submission');
+
+  select count(*) into v_n from storage.objects where bucket_id = 'attachments';
+  return next ok(v_n = 1,
+    'Collector sees only attachments on their own submissions, saw ' || v_n);
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    '{"sub":"e0000000-0000-0000-0000-000000000002","role":"authenticated"}', true);
+
+  return next lives_ok(
+    $q$ insert into public.form_translations (form_version_id, lang, labels, engine)
+        values ('44444444-4444-4444-4444-444444444444', 'es',
+                '{"mass_g":{"label":"Masa corporal"}}', 'argos') $q$,
+    'Coordinator can store a machine draft translation');
+
+  select count(*) into v_n from public.form_translations;
+  return next ok(v_n = 1, 'Coordinator sees the unreviewed draft, saw ' || v_n);
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    '{"sub":"e0000000-0000-0000-0000-000000000003","role":"authenticated"}', true);
+
+  select count(*) into v_n from public.form_translations;
+  return next ok(v_n = 0,
+    'A machine draft is invisible to a collector until it is reviewed, saw ' || v_n);
+
+  return next throws_ok(
+    $q$ insert into public.form_translations (form_version_id, lang, labels)
+        values ('44444444-4444-4444-4444-444444444444', 'fr', '{}') $q$,
+    '42501', null::text,
+    'Collector cannot author translations');
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    '{"sub":"e0000000-0000-0000-0000-000000000002","role":"authenticated"}', true);
+
+  return next lives_ok(
+    $q$ update public.form_translations
+           set reviewed_at = now(),
+               reviewed_by = 'e0000000-0000-0000-0000-000000000003'
+         where lang = 'es' $q$,
+    'Coordinator can approve a translation');
+
+  select reviewed_by::text into v_t from public.form_translations where lang = 'es';
+  return next ok(v_t = 'e0000000-0000-0000-0000-000000000002',
+    'reviewed_by is stamped from the session, not taken from the client, got ' || coalesce(v_t, 'null'));
+
+  update public.form_translations
+     set labels = '{"mass_g":{"label":"Masa corporal (g)"}}'
+   where lang = 'es';
+
+  select reviewed_at::text into v_t from public.form_translations where lang = 'es';
+  return next ok(v_t is null,
+    'Editing an approved translation returns it to unreviewed');
+
+  update public.form_translations set reviewed_at = now() where lang = 'es';
+
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    '{"sub":"e0000000-0000-0000-0000-000000000003","role":"authenticated"}', true);
+
+  select count(*) into v_n from public.form_translations;
+  return next ok(v_n = 1,
+    'A reviewed translation becomes visible to a collector, saw ' || v_n);
 
   perform set_config('role', v_owner, true);
   perform set_config('request.jwt.claims', '', true);
