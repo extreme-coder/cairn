@@ -12,7 +12,7 @@ declare
   v_n     bigint;
   v_t     text;
 begin
-  return next plan(36);
+  return next plan(37);
 
   insert into auth.users
     (instance_id, id, aud, role, email, encrypted_password,
@@ -332,6 +332,10 @@ begin
   select count(*) into v_n from public.form_translations;
   return next ok(v_n = 1,
     'A reviewed translation becomes visible to a collector, saw ' || v_n);
+
+  return next lives_ok(
+    $q$ insert into public.studies (name) values ('Creator readback') returning id $q$,
+    'A creator can read back the study they just inserted, so claim_new_study runs before RETURNING');
 
   perform set_config('role', v_owner, true);
   perform set_config('request.jwt.claims', '', true);
