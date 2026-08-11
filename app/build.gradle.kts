@@ -1,14 +1,24 @@
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
 android {
-    namespace = "app.cairn.feature.capture"
+    namespace = "app.cairn"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
+        applicationId = "app.cairn"
         minSdk = libs.versions.minSdk.get().toInt()
+        targetSdk = libs.versions.targetSdk.get().toInt()
+        versionCode = 1
+        versionName = "0.1.0"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
@@ -25,18 +35,17 @@ android {
     }
 }
 
-tasks.withType<Test>().configureEach {
-    systemProperty("roborazzi.test.record", "true")
-}
-
 kotlin {
     jvmToolchain(21)
-    explicitApi()
 }
 
 dependencies {
-    api(project(":core:database"))
-    api(project(":core:designsystem"))
+    implementation(project(":feature:capture"))
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.core)
 
     implementation(platform(libs.compose.bom))
@@ -44,18 +53,11 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
-    testImplementation(libs.sqlite.bundled.jvm)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
-    testImplementation(libs.roborazzi)
-    testImplementation(libs.roborazzi.compose)
-    debugImplementation(libs.compose.ui.test.manifest)
 }
