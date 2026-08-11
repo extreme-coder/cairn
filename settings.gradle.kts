@@ -18,3 +18,4 @@ rootProject.name = "cairn"
 
 include(":core:model")
 include(":core:database")
+include(":feature:capture")
