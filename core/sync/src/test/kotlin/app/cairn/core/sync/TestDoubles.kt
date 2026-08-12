@@ -9,10 +9,14 @@ import app.cairn.core.network.FormTranslationDto
 import app.cairn.core.network.FormVersionDto
 import app.cairn.core.network.ParticipantDto
 import app.cairn.core.network.RemoteDataSource
+import app.cairn.core.network.SessionState
+import app.cairn.core.network.SignInOutcome
 import app.cairn.core.network.StudyDto
 import app.cairn.core.network.StudyMemberDto
 import app.cairn.core.network.SubmissionDto
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import java.io.IOException
 
 /**
@@ -97,8 +101,12 @@ internal class FakeRemote : RemoteDataSource {
     private var assigned = 0
     private var stamped = 0
 
-    override suspend fun signIn(email: String, password: String) {
+    override val sessionState: Flow<SessionState>
+        get() = flowOf(currentUser?.let(SessionState::SignedIn) ?: SessionState.SignedOut)
+
+    override suspend fun signIn(email: String, password: String): SignInOutcome {
         currentUser = Ids.ADAKU
+        return SignInOutcome.Success
     }
 
     override suspend fun signOut() {

@@ -42,6 +42,7 @@ public class SyncWorker(
 
         return try {
             val outcome = engine.sync()
+            SyncStatus.succeeded()
             Log.i(TAG, "pushed ${outcome.pushed}, failed ${outcome.failed}, pulled ${outcome.pulledTotal}")
             Result.success(
                 workDataOf(

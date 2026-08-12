@@ -1,5 +1,7 @@
 package app.cairn.core.network
 
+import kotlinx.coroutines.flow.Flow
+
 /**
  * Everything Cairn asks of a server, in one interface.
  *
@@ -18,11 +20,30 @@ package app.cairn.core.network
  */
 public interface RemoteDataSource {
 
-    public suspend fun signIn(email: String, password: String)
+    /**
+     * Who this device is signed in as, as it changes.
+     *
+     * The one source of that answer. Emits [SessionState.Unknown] until storage
+     * has been read, so a cold start does not flash a signed-out state at
+     * someone who is signed in.
+     */
+    public val sessionState: Flow<SessionState>
 
+    public suspend fun signIn(email: String, password: String): SignInOutcome
+
+    /**
+     * Ends the session on this device, revoking it server-side if that is
+     * possible. It must end locally either way — a collector handing the phone
+     * over is not always in coverage, and "sign out failed, you are still signed
+     * in" is the wrong answer to give them.
+     */
     public suspend fun signOut()
 
-    /** Null when signed out. This is the `collected_by` every submission carries. */
+    /**
+     * Null when there is no usable access token — which includes a session that
+     * is signed in but [SessionState.Stale]. Sync asks this, and the honest
+     * answer while a refresh is failing is that there is nothing to sync with.
+     */
     public suspend fun currentUserId(): String?
 
     public suspend fun studies(since: String? = null, limit: Int = PAGE): List<StudyDto>

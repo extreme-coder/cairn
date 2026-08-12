@@ -5,6 +5,7 @@ import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
@@ -12,6 +13,10 @@ import io.github.jan.supabase.postgrest.query.PostgrestQueryBuilder
 import io.github.jan.supabase.postgrest.query.filter.PostgrestFilterBuilder
 import io.github.jan.supabase.postgrest.result.PostgrestResult
 import io.ktor.client.engine.HttpClientEngine
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import java.io.IOException
 
 /**
  * Builds the Supabase client.
@@ -23,21 +28,24 @@ import io.ktor.client.engine.HttpClientEngine
  * [engine] is injectable so tests can drive a `MockEngine` and assert on the
  * request that would have gone out.
  *
- * **The session is not loaded from storage.** This is a pure Kotlin JVM module,
- * so supabase-kt would fall back to its JVM session manager and write a token to
- * a file beside the process rather than anywhere an Android app should keep one.
- * Persisting the refresh token properly is its own piece of work; until then the
- * caller signs in explicitly and the session lives in memory, refreshed in place
- * so a long-running app does not start failing with an expired JWT.
+ * **Storage is opt-in through [sessions].** With no session manager supplied the
+ * session lives in memory only and dies with the process — which is what tests
+ * want, and what a pure JVM caller has to have, because supabase-kt's own JVM
+ * fallback writes a token to a file beside the process. Pass a
+ * [StoredSessionManager] and the library loads, refreshes and re-saves the
+ * session itself; how those bytes are protected is that store's problem, not
+ * this module's.
  */
 public fun cairnSupabaseClient(
     url: String,
     key: String,
     engine: HttpClientEngine? = null,
+    sessions: StoredSessionManager? = null,
 ): SupabaseClient = createSupabaseClient(supabaseUrl = url, supabaseKey = key) {
     install(Auth) {
-        autoLoadFromStorage = false
-        autoSaveToStorage = false
+        if (sessions != null) sessionManager = sessions
+        autoLoadFromStorage = sessions != null
+        autoSaveToStorage = sessions != null
         alwaysAutoRefresh = true
     }
     install(Postgrest)
@@ -46,17 +54,44 @@ public fun cairnSupabaseClient(
 
 public class SupabaseRemoteDataSource(
     private val client: SupabaseClient,
+    sessions: StoredSessionManager? = null,
 ) : RemoteDataSource {
 
-    override suspend fun signIn(email: String, password: String) {
+    override val sessionState: Flow<SessionState> =
+        combine(
+            client.auth.sessionStatus,
+            sessions?.knownUserId ?: flowOf(null),
+        ) { status, known -> sessionStateOf(status, known) }
+
+    /**
+     * A refused sign-in and an unreachable one are told apart by which exception
+     * arrives, not by inspecting a message. `RestException` means the server
+     * answered; `HttpRequestException` and ktor's timeout both extend
+     * `IOException`, which is the whole family of "the request never got there".
+     */
+    override suspend fun signIn(email: String, password: String): SignInOutcome = try {
         client.auth.signInWith(Email) {
             this.email = email
             this.password = password
         }
+        SignInOutcome.Success
+    } catch (refused: RestException) {
+        SignInOutcome.Rejected(refused.description ?: refused.error)
+    } catch (_: IOException) {
+        SignInOutcome.Unreachable
     }
 
+    /**
+     * The revoke is best-effort; ending the session locally is not.
+     *
+     * `signOut()` calls the server and throws when it cannot be reached, which
+     * would otherwise leave a device signed in precisely when someone is trying
+     * to hand it to a colleague. `clearSession()` drops the in-memory session and
+     * deletes the stored one, so the local half always happens.
+     */
     override suspend fun signOut() {
-        client.auth.signOut()
+        runCatching { client.auth.signOut() }
+        client.auth.clearSession()
     }
 
     override suspend fun currentUserId(): String? = client.auth.currentUserOrNull()?.id
