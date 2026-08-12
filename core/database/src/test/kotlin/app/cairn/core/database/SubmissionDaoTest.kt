@@ -242,4 +242,28 @@ class SubmissionDaoTest {
         val row = db.submissions().observe(Ids.ADAKU, "aaaaaaaa-0000-0000-0000-000000000001").first()
         assertTrue(row!!.isLocked)
     }
+
+    /**
+     * What a pull consults before writing anything.
+     *
+     * FAILED has to be in here as much as QUEUED: a row the server rejected still
+     * holds the only copy of an observation, and a pull that overwrote it would
+     * turn a retryable error into lost data.
+     */
+    @Test
+    fun `pending keys are the queued and failed rows, never the uploaded ones`() = runTest {
+        db.submissions().upsert(submission(clientId = "queued", syncState = SyncState.QUEUED))
+        db.submissions().upsert(submission(clientId = "failed", syncState = SyncState.FAILED))
+        db.submissions().upsert(
+            submission(
+                clientId = "uploaded",
+                syncState = SyncState.UPLOADED,
+                pendingSince = null,
+            ),
+        )
+
+        val keys = db.submissions().pendingKeys()
+        assertEquals(setOf("queued", "failed"), keys.map { it.clientId }.toSet())
+        assertEquals(setOf(Ids.ADAKU), keys.map { it.collectedBy }.toSet())
+    }
 }

@@ -1,7 +1,24 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+/**
+ * Dev sign-in credentials, read from the gitignored `local.properties`.
+ *
+ * There is no sign-in screen yet, so a debug build signs in headlessly to prove
+ * the round trip. Nothing here reaches the repository: the file is gitignored,
+ * and a machine without these keys builds an app that simply never signs in
+ * rather than one that fails to compile.
+ */
+val devCredentials = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}
+
+fun devProperty(name: String): String = devCredentials.getProperty(name).orEmpty()
 
 android {
     namespace = "app.cairn"
@@ -13,6 +30,11 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+
+        buildConfigField("String", "SUPABASE_URL", "\"${devProperty("cairn.supabase.url")}\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"${devProperty("cairn.supabase.key")}\"")
+        buildConfigField("String", "DEV_EMAIL", "\"${devProperty("cairn.dev.email")}\"")
+        buildConfigField("String", "DEV_PASSWORD", "\"${devProperty("cairn.dev.password")}\"")
     }
 
     buildTypes {
@@ -28,6 +50,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -41,6 +64,7 @@ kotlin {
 
 dependencies {
     implementation(project(":feature:capture"))
+    implementation(project(":core:sync"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

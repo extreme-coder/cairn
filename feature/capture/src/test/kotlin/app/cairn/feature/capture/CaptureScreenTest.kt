@@ -95,20 +95,22 @@ class CaptureScreenTest {
         compose.onNodeWithTag("error_body_mass")
             .performScrollTo()
             .assertTextContains("Body mass is required.")
-        compose.onNodeWithTag("save_note").assertTextContains("Saved on this device.")
+        compose.onNodeWithTag("save_note")
+            .assertTextContains("Saved on this device. Uploads when you reconnect.")
     }
 
     /**
-     * There is no network code in this build, so no string on this screen may
-     * promise an upload. Delete this test when `:core:sync` makes it false.
+     * The upload clause was cut on 2026-08-11 because no build could keep the
+     * promise, and a test pinned its absence. `:core:sync` made that false — a
+     * queued submission now really does go up when the network returns — so the
+     * pin is inverted: the screen has to say so.
      */
     @Test
-    fun `nothing on the screen promises an upload the build cannot perform`() {
+    fun `the screen promises the upload the build now performs`() {
         compose.setContent { Harness(previewState(queuedCount = 3)) }
 
-        listOf("upload", "Upload", "reconnect", "sync", "Sync").forEach { word ->
-            compose.onAllNodesWithText(word, substring = true).assertCountEquals(0)
-        }
+        compose.onNodeWithTag("save_note")
+            .assertTextContains("Saved on this device. Uploads when you reconnect.")
     }
 
     @Test
@@ -181,7 +183,8 @@ class CaptureScreenTest {
     fun `the queue banner states the count and what happens next`() {
         compose.setContent { Harness(previewState(queuedCount = 3)) }
 
-        compose.onNodeWithTag("queue_banner").assertTextContains("3 queued on this device.")
+        compose.onNodeWithTag("queue_banner")
+            .assertTextContains("3 queued, uploading when you reconnect.")
     }
 
     @Test

@@ -21,6 +21,10 @@ public interface StudyDao {
     @Query("select * from studies where id = :studyId")
     public fun observe(studyId: String): Flow<StudyEntity?>
 
+    /** Which studies this device holds. A pull walks these to scope every other table. */
+    @Query("select id from studies")
+    public suspend fun ids(): List<String>
+
     @Upsert
     public suspend fun upsert(studies: List<StudyEntity>)
 
@@ -83,6 +87,29 @@ public interface FormDao {
 
     @Upsert
     public suspend fun upsertVersions(versions: List<FormVersionEntity>)
+
+    /**
+     * Which of [ids] are actually on disk.
+     *
+     * `@Upsert` updates by primary key, so a row carrying a fresh `id` that
+     * collides on `(study_id, code)` matches nothing to update and is discarded
+     * with no error. Sync reads this back after applying a delta rather than
+     * trusting that every row it handed Room landed.
+     */
+    @Query("select id from forms where id in (:ids)")
+    public suspend fun existingFormIds(ids: List<String>): List<String>
+
+    /** The scope a `form_versions` pull is taken under. See `scopeOf` in `:core:sync`. */
+    @Query("select id from forms where study_id = :studyId")
+    public suspend fun formIds(studyId: String): List<String>
+
+    /** The scope a `form_translations` pull is taken under. Drafts included — a coordinator pulls those too. */
+    @Query("select id from form_versions where form_id in (:formIds)")
+    public suspend fun versionIds(formIds: List<String>): List<String>
+
+    /** Same read-back as [existingFormIds]; the unique index here is `(form_id, version)`. */
+    @Query("select id from form_versions where id in (:ids)")
+    public suspend fun existingVersionIds(ids: List<String>): List<String>
 }
 
 @Dao
@@ -96,6 +123,10 @@ public interface ParticipantDao {
 
     @Upsert
     public suspend fun upsert(participants: List<ParticipantEntity>)
+
+    /** Read-back after a delta; the unique index here is `(study_id, code)`. See [FormDao.existingFormIds]. */
+    @Query("select id from participants where id in (:ids)")
+    public suspend fun existingIds(ids: List<String>): List<String>
 }
 
 @Dao
@@ -119,4 +150,8 @@ public interface FormTranslationDao {
 
     @Upsert
     public suspend fun upsert(translations: List<FormTranslationEntity>)
+
+    /** Read-back after a delta; the unique index here is `(form_version_id, lang)`. See [FormDao.existingFormIds]. */
+    @Query("select id from form_translations where id in (:ids)")
+    public suspend fun existingIds(ids: List<String>): List<String>
 }

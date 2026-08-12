@@ -227,7 +227,7 @@ private fun QueueBanner(count: Int) {
         StatusDot(MaterialTheme.colorScheme.tertiary)
         Spacer(Modifier.size(Spacing.Medium))
         Text(
-            text = "$count queued on this device.",
+            text = "$count queued, uploading when you reconnect.",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.testTag("queue_banner"),
         )
@@ -518,9 +518,9 @@ private fun BottomActions(
         ) {
             Text(
                 text = if (saved) {
-                    "Saved on this device. $queuedCount queued."
+                    "Saved on this device. $queuedCount queued, uploading when you reconnect."
                 } else {
-                    "Saved on this device."
+                    "Saved on this device. Uploads when you reconnect."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,

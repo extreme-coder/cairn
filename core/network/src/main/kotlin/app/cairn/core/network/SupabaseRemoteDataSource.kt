@@ -22,13 +22,24 @@ import io.ktor.client.engine.HttpClientEngine
  *
  * [engine] is injectable so tests can drive a `MockEngine` and assert on the
  * request that would have gone out.
+ *
+ * **The session is not loaded from storage.** This is a pure Kotlin JVM module,
+ * so supabase-kt would fall back to its JVM session manager and write a token to
+ * a file beside the process rather than anywhere an Android app should keep one.
+ * Persisting the refresh token properly is its own piece of work; until then the
+ * caller signs in explicitly and the session lives in memory, refreshed in place
+ * so a long-running app does not start failing with an expired JWT.
  */
 public fun cairnSupabaseClient(
     url: String,
     key: String,
     engine: HttpClientEngine? = null,
 ): SupabaseClient = createSupabaseClient(supabaseUrl = url, supabaseKey = key) {
-    install(Auth)
+    install(Auth) {
+        autoLoadFromStorage = false
+        autoSaveToStorage = false
+        alwaysAutoRefresh = true
+    }
     install(Postgrest)
     if (engine != null) httpEngine = engine
 }

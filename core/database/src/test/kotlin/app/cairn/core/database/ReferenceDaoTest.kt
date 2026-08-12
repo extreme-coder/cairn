@@ -253,4 +253,45 @@ class ReferenceDaoTest {
         assertEquals("body_mass", schema.fields.single().key)
         assertEquals(90.0, schema.field("body_mass")?.min)
     }
+
+    /**
+     * The other half of the dropped-row gotcha above: a way to notice.
+     *
+     * Sync cannot tell from `upsert` alone that a row was discarded, so it reads
+     * the ids back. This asserts the read-back actually reports the loss rather
+     * than agreeing with the upsert that everything is fine.
+     */
+    @Test
+    fun `a dropped form is reported absent by the read-back`() = runTest {
+        val shadowed = "22222222-0000-0000-0000-000000000002"
+        db.forms().upsertForms(listOf(form(id = shadowed, code = "baseline_intake")))
+
+        assertEquals(emptyList<String>(), db.forms().existingFormIds(listOf(shadowed)))
+        assertEquals(listOf(Ids.FORM), db.forms().existingFormIds(listOf(Ids.FORM, shadowed)))
+    }
+
+    @Test
+    fun `a dropped form version is reported absent by the read-back`() = runTest {
+        val shadowed = "33333333-0000-0000-0000-000000000009"
+        db.forms().upsertVersions(listOf(formVersion(id = shadowed, version = 1)))
+
+        assertEquals(emptyList<String>(), db.forms().existingVersionIds(listOf(shadowed)))
+    }
+
+    @Test
+    fun `a dropped participant is reported absent by the read-back`() = runTest {
+        val shadowed = "44444444-0000-0000-0000-000000000009"
+        db.participants().upsert(listOf(participant(id = shadowed, code = "K-014")))
+
+        assertEquals(emptyList<String>(), db.participants().existingIds(listOf(shadowed)))
+    }
+
+    @Test
+    fun `a dropped translation is reported absent by the read-back`() = runTest {
+        db.translations().upsert(listOf(translation(lang = "fr")))
+        val shadowed = translation(lang = "fr").copy(id = "translation-fr-again")
+        db.translations().upsert(listOf(shadowed))
+
+        assertEquals(emptyList<String>(), db.translations().existingIds(listOf(shadowed.id)))
+    }
 }

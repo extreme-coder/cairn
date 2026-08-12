@@ -1,5 +1,6 @@
 package app.cairn.core.database.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
@@ -7,6 +8,17 @@ import app.cairn.core.database.entity.SubmissionEntity
 import app.cairn.core.model.SyncState
 import kotlinx.coroutines.flow.Flow
 import kotlin.time.Instant
+
+/**
+ * Identifies a submission the way both sides of the wire do.
+ *
+ * Not the server's `id`: a row exists on the device before the server has ever
+ * seen it, so `id` is null for exactly the rows a pull most needs to avoid.
+ */
+public data class SubmissionKey(
+    @ColumnInfo(name = "collected_by") public val collectedBy: String,
+    @ColumnInfo(name = "client_id") public val clientId: String,
+)
 
 @Dao
 public interface SubmissionDao {
@@ -46,6 +58,16 @@ public interface SubmissionDao {
         """,
     )
     public suspend fun awaiting(state: SyncState = SyncState.QUEUED, limit: Int = 500): List<SubmissionEntity>
+
+    /**
+     * Every row that has a local change the server has not acknowledged.
+     *
+     * A pull must not write over these. The device's copy is the only copy, and
+     * the incoming row is the server's older idea of it — applying it would
+     * discard an observation that was collected offline and never sent.
+     */
+    @Query("select collected_by, client_id from submissions where sync_state != 'UPLOADED'")
+    public suspend fun pendingKeys(): List<SubmissionKey>
 
     @Upsert
     public suspend fun upsert(submissions: List<SubmissionEntity>)
