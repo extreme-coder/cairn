@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,11 +76,13 @@ public fun CaptureScreen(
     onSave: () -> Unit,
     onStartAnother: () -> Unit,
     modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     when (state) {
         is CaptureUiState.Loading -> Centred("Opening the form.", modifier)
         is CaptureUiState.Unopenable -> Centred(state.reason.message(), modifier)
-        is CaptureUiState.Editing -> Editing(state, onEdit, onSave, onStartAnother, modifier)
+        is CaptureUiState.Editing ->
+            Editing(state, onEdit, onSave, onStartAnother, modifier, actions)
     }
 }
 
@@ -109,6 +112,7 @@ private fun Editing(
     onSave: () -> Unit,
     onStartAnother: () -> Unit,
     modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     val saved = state.savedClientId != null
     Scaffold(
@@ -117,7 +121,14 @@ private fun Editing(
         // The bars pad themselves for the system insets, so the content area must
         // not be padded for them a second time.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = { AppBar(state.form, showDiscard = !saved, onDiscard = onStartAnother) },
+        topBar = {
+            AppBar(
+                form = state.form,
+                showDiscard = !saved,
+                onDiscard = onStartAnother,
+                actions = actions,
+            )
+        },
         bottomBar = {
             BottomActions(
                 saved = saved,
@@ -152,8 +163,20 @@ private fun Editing(
     }
 }
 
+/**
+ * [actions] is a slot rather than a parameter list because what belongs here is
+ * not the capture feature's business: the app puts Sign out there today and a
+ * navigation control there tomorrow, and neither is a reason for this module to
+ * learn what a session is. The design allows two app-bar actions, which Discard
+ * plus one slot exactly fills.
+ */
 @Composable
-private fun AppBar(form: FormHeader, showDiscard: Boolean, onDiscard: () -> Unit) {
+private fun AppBar(
+    form: FormHeader,
+    showDiscard: Boolean,
+    onDiscard: () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
     Column(
         Modifier
             .background(MaterialTheme.colorScheme.surface)
@@ -182,6 +205,7 @@ private fun AppBar(form: FormHeader, showDiscard: Boolean, onDiscard: () -> Unit
                     )
                 }
             }
+            actions()
         }
         HorizontalDivider(
             thickness = Spacing.Hairline,

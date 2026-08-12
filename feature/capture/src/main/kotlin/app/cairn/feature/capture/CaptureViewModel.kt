@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -74,6 +75,29 @@ public class CaptureViewModel(
 
     init {
         openForm()
+        reopenWhenAVersionArrives()
+    }
+
+    /**
+     * A form that could not be opened is not permanently unopenable.
+     *
+     * Forms and their versions arrive in separate pulls, so a device syncing for
+     * the first time — after a sign-in, or on a phone handed to a second
+     * collector — sees the form row seconds before the version that makes it
+     * fillable. Opening once left the screen stuck on "no published version yet"
+     * until the app was restarted, which is a lie the collector cannot argue
+     * with.
+     *
+     * Only re-opens from a failed state. A version landing mid-entry must not
+     * take the form away from someone who is filling it in, which is why the
+     * opened state is read here and not simply overwritten.
+     */
+    private fun reopenWhenAVersionArrives() {
+        viewModelScope.launch {
+            forms.observeCurrentVersion(formId)
+                .filterNotNull()
+                .collect { if (opened.value is Opened.Failed) openForm() }
+        }
     }
 
     /** Also the "Discard" action: a fresh open means a fresh `client_id`. */

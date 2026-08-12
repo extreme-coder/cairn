@@ -18,6 +18,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.time.Instant
 
 @RunWith(RobolectricTestRunner::class)
@@ -72,6 +73,47 @@ class CaptureViewModelTest {
                 state,
             )
         }
+
+    /**
+     * Forms and their versions arrive in separate pulls, so a device syncing for
+     * the first time sees the form before the version that makes it fillable.
+     * Opening once left the screen stuck on "no published version yet" until the
+     * app was restarted — reachable in ordinary use as soon as signing out wipes
+     * the device. Seen on the emulator on 2026-08-12.
+     */
+    @Test
+    fun `a version arriving after the form opens un-sticks the screen`() = runTest {
+        db.seedKestrelStudy()
+        val vm = viewModel(formId = Ids.DRAFT_FORM)
+        backgroundScope.launch { vm.uiState.collect {} }
+        vm.uiState.first { it is CaptureUiState.Unopenable }
+
+        db.forms().upsertVersions(
+            listOf(formVersion(id = Ids.DRAFT_VERSION, formId = Ids.DRAFT_FORM, version = 1)),
+        )
+
+        val state = vm.uiState.first { it is CaptureUiState.Editing } as CaptureUiState.Editing
+        assertEquals("Nest check", state.form.title)
+        assertEquals("v1", state.form.versionLabel)
+    }
+
+    /** A version landing must not take a half-filled form away from the collector. */
+    @Test
+    fun `a version arriving mid-entry leaves what has been typed alone`() = runTest {
+        db.seedKestrelStudy()
+        val vm = viewModel()
+        backgroundScope.launch { vm.uiState.collect {} }
+        vm.uiState.first { it is CaptureUiState.Editing }
+        vm.edit { it.setNumber("body_mass", "268") }
+
+        db.forms().upsertVersions(
+            listOf(formVersion(id = "33333333-3333-3333-3333-333333333333", version = 3)),
+        )
+
+        val state = vm.uiState.first { it is CaptureUiState.Editing } as CaptureUiState.Editing
+        assertEquals("v2", state.form.versionLabel)
+        assertEquals(JsonPrimitive(268.0), state.capture.values["body_mass"])
+    }
 
     @Test
     fun `editing forwards to the capture state and nothing else`() = runTest {

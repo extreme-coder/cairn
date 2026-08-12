@@ -6,12 +6,13 @@ plugins {
 }
 
 /**
- * Dev sign-in credentials, read from the gitignored `local.properties`.
+ * Server address and a suggested email, read from the gitignored
+ * `local.properties`.
  *
- * There is no sign-in screen yet, so a debug build signs in headlessly to prove
- * the round trip. Nothing here reaches the repository: the file is gitignored,
- * and a machine without these keys builds an app that simply never signs in
- * rather than one that fails to compile.
+ * The email only pre-fills the Sign in screen; the password is always typed.
+ * Nothing here reaches the repository: the file is gitignored, and a machine
+ * without these keys builds an app that says it has no server rather than one
+ * that fails to compile.
  */
 val devCredentials = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -34,7 +35,6 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"${devProperty("cairn.supabase.url")}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${devProperty("cairn.supabase.key")}\"")
         buildConfigField("String", "DEV_EMAIL", "\"${devProperty("cairn.dev.email")}\"")
-        buildConfigField("String", "DEV_PASSWORD", "\"${devProperty("cairn.dev.password")}\"")
     }
 
     buildTypes {
@@ -64,7 +64,9 @@ kotlin {
 
 dependencies {
     implementation(project(":feature:capture"))
+    implementation(project(":feature:auth"))
     implementation(project(":core:sync"))
+    implementation(project(":core:session"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
