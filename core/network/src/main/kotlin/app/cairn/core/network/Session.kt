@@ -26,22 +26,38 @@ public sealed interface SessionState {
     /** The `collected_by` every submission this device creates carries. */
     public val userId: String?
 
+    /**
+     * What a person recognises themselves by. Null when the stored session
+     * predates this field or the server did not send one — a device signed in as
+     * an id nobody can read is still signed in, so the screen falls back rather
+     * than the state becoming unusable.
+     */
+    public val email: String?
+
     /** Storage has not been read yet. Distinct from signed out, and not a screen. */
     public data object Unknown : SessionState {
         override val userId: String? get() = null
+        override val email: String? get() = null
     }
 
     public data object SignedOut : SessionState {
         override val userId: String? get() = null
+        override val email: String? get() = null
     }
 
-    public data class SignedIn(override val userId: String) : SessionState
+    public data class SignedIn(
+        override val userId: String,
+        override val email: String? = null,
+    ) : SessionState
 
     /**
      * Signed in, but the access token could not be refreshed. Capture works;
      * anything that talks to the server waits.
      */
-    public data class Stale(override val userId: String) : SessionState
+    public data class Stale(
+        override val userId: String,
+        override val email: String? = null,
+    ) : SessionState
 }
 
 /**
@@ -100,10 +116,21 @@ public class StoredSessionManager(
 
     private val known = MutableStateFlow<String?>(null)
 
+    private val knownAddress = MutableStateFlow<String?>(null)
+
     public val knownUserId: StateFlow<String?> = known.asStateFlow()
+
+    /**
+     * Remembered for the same reason [knownUserId] is: a refresh failure carries
+     * no session, and "signed in, cannot reach the server" is a state the app has
+     * to be able to describe out loud. Saying it as *Adaku* rather than as a UUID
+     * is the difference between a settings screen and a diagnostic.
+     */
+    public val knownEmail: StateFlow<String?> = knownAddress.asStateFlow()
 
     override suspend fun saveSession(session: UserSession) {
         session.user?.id?.let { known.value = it }
+        session.user?.email?.let { knownAddress.value = it }
         store.write(json.encodeToString(session))
     }
 
@@ -123,11 +150,13 @@ public class StoredSessionManager(
             throw NoSessionFoundException()
         }
         known.value = session.user?.id
+        knownAddress.value = session.user?.email
         return session
     }
 
     override suspend fun deleteSession() {
         known.value = null
+        knownAddress.value = null
         store.clear()
     }
 
@@ -146,15 +175,19 @@ public class StoredSessionManager(
  * dead produces `NotAuthenticated`, and supabase-kt deletes the stored session
  * itself when that happens.
  */
-internal fun sessionStateOf(status: SessionStatus, knownUserId: String?): SessionState =
+internal fun sessionStateOf(
+    status: SessionStatus,
+    knownUserId: String?,
+    knownEmail: String? = null,
+): SessionState =
     when (status) {
         is SessionStatus.Initializing -> SessionState.Unknown
         is SessionStatus.Authenticated ->
             (status.session.user?.id ?: knownUserId)
-                ?.let(SessionState::SignedIn)
+                ?.let { SessionState.SignedIn(it, status.session.user?.email ?: knownEmail) }
                 ?: SessionState.SignedOut
         is SessionStatus.RefreshFailure ->
-            knownUserId?.let(SessionState::Stale) ?: SessionState.SignedOut
+            knownUserId?.let { SessionState.Stale(it, knownEmail) } ?: SessionState.SignedOut
         is SessionStatus.NotAuthenticated -> SessionState.SignedOut
         else -> SessionState.Unknown
     }

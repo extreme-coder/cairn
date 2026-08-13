@@ -73,13 +73,28 @@ internal fun scopeOf(ids: Collection<String>): String {
 private const val SCOPE_BYTES = 8
 
 /**
- * The app's cursor store. Keeps DataStore an implementation detail of this
- * module rather than something `:app` has to depend on and name a file for.
+ * The two things this module keeps outside Room, over the one file it writes.
+ *
+ * Handed out together because they must be built over the same [DataStore]:
+ * cursors and the last-synced time are the same kind of fact — where this
+ * device got to, for whoever is signed in — they are cleared together on
+ * sign-out, and two DataStores over one path throw outright. Returning them as
+ * a pair is what stops a caller from opening a second one.
  */
-public fun cairnSyncCursors(context: Context): SyncCursors =
-    DataStoreSyncCursors(
-        PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("sync_cursors") },
-    )
+public class SyncStores internal constructor(
+    public val cursors: SyncCursors,
+    public val log: SyncLog,
+)
+
+/**
+ * The app's store. Keeps DataStore an implementation detail of this module
+ * rather than something `:app` has to depend on and name a file for.
+ */
+public fun cairnSyncStores(context: Context): SyncStores {
+    val store: DataStore<Preferences> =
+        PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("sync_cursors") }
+    return SyncStores(DataStoreSyncCursors(store), DataStoreSyncLog(store))
+}
 
 public class DataStoreSyncCursors(
     private val store: DataStore<Preferences>,

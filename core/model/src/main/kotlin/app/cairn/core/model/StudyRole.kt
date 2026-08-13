@@ -27,6 +27,23 @@ public enum class StudyRole {
     VIEWER,
     ;
 
+    /**
+     * How the role is written wherever a person reads it.
+     *
+     * Here rather than in a screen for the same reason validation messages are
+     * generated from the field spec: the voice guide fixes these four words, and
+     * a chip on the Studies screen, a row on Members and a line on a submission
+     * must not drift into `Principal investigator`, `Coord.` and `PI` — the
+     * one-term-per-concept rule is only real if there is one place it is written.
+     */
+    public val label: String
+        get() = when (this) {
+            PI -> "PI"
+            COORDINATOR -> "Coordinator"
+            COLLECTOR -> "Collector"
+            VIEWER -> "Viewer"
+        }
+
     public val showsCollectAction: Boolean
         get() = this != VIEWER
 

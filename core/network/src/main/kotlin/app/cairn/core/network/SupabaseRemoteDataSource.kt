@@ -61,7 +61,8 @@ public class SupabaseRemoteDataSource(
         combine(
             client.auth.sessionStatus,
             sessions?.knownUserId ?: flowOf(null),
-        ) { status, known -> sessionStateOf(status, known) }
+            sessions?.knownEmail ?: flowOf(null),
+        ) { status, known, email -> sessionStateOf(status, known, email) }
 
     /**
      * A refused sign-in and an unreachable one are told apart by which exception

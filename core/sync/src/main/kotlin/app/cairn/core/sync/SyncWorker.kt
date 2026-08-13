@@ -17,6 +17,7 @@ import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * Runs [SyncEngine] on WorkManager's terms.
@@ -43,6 +44,15 @@ public class SyncWorker(
         return try {
             val outcome = engine.sync()
             SyncStatus.succeeded()
+            /*
+             * Recorded here rather than inside the engine so that "last synced"
+             * means exactly what `SyncStatus.succeeded()` means, and cannot come
+             * to mean something subtly different. A push that could not send
+             * throws out of `sync()` and lands in the retry branch below, so
+             * neither line is reached — which is correct: a device with
+             * submissions still in the queue has not synced.
+             */
+            SyncDependencies.log?.record(Instant.fromEpochMilliseconds(System.currentTimeMillis()))
             Log.i(TAG, "pushed ${outcome.pushed}, failed ${outcome.failed}, pulled ${outcome.pulledTotal}")
             Result.success(
                 workDataOf(
@@ -153,7 +163,16 @@ public object SyncDependencies {
     @Volatile
     public var engine: SyncEngine? = null
 
-    public fun install(engine: SyncEngine) {
+    /**
+     * Optional, and null in every test that does not care when a sync happened.
+     * A worker with no log still syncs; it just cannot say when it last did,
+     * which is the Settings screen's problem and not the queue's.
+     */
+    @Volatile
+    public var log: SyncLog? = null
+
+    public fun install(engine: SyncEngine, log: SyncLog? = null) {
         this.engine = engine
+        this.log = log
     }
 }

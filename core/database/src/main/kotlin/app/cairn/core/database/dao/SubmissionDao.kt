@@ -48,6 +48,117 @@ public interface SubmissionDao {
     @Query("select count(*) from submissions where sync_state != 'UPLOADED'")
     public fun observeUnsyncedCount(): Flow<Int>
 
+    /**
+     * Everything this collector has recorded that the server has not
+     * acknowledged, across every study.
+     *
+     * The Queue is not scoped to a study on purpose. A collector walking two
+     * transects in a morning has one bag of unsent observations, and asking them
+     * to check each study separately to find out whether anything is stuck is
+     * how a submission gets left behind.
+     *
+     * `collected_at desc` matches the capture screen and the Studies list: the
+     * most recent thing you did is at the top, whatever state it is in.
+     */
+    @Query(
+        """
+        select s.client_id as client_id,
+               s.study_id as study_id,
+               st.name as study_name,
+               f.code as form_code,
+               fv.version as version,
+               p.code as participant_code,
+               s.collected_at as collected_at,
+               s.sync_state as sync_state
+          from submissions s
+          join studies st on st.id = s.study_id
+          join form_versions fv on fv.id = s.form_version_id
+          join forms f on f.id = fv.form_id
+          left join participants p on p.id = s.participant_id
+         where s.collected_by = :userId
+           and s.deleted_at is null
+           and s.sync_state != 'UPLOADED'
+         order by s.collected_at desc
+        """,
+    )
+    public fun observePending(userId: String): Flow<List<QueuedSubmission>>
+
+    /**
+     * The uploaded half of the Queue, behind "Show all uploaded".
+     *
+     * Limited, because this list only grows: a device three months into a season
+     * holds thousands of these and none of them need anything done to them.
+     */
+    @Query(
+        """
+        select s.client_id as client_id,
+               s.study_id as study_id,
+               st.name as study_name,
+               f.code as form_code,
+               fv.version as version,
+               p.code as participant_code,
+               s.collected_at as collected_at,
+               s.sync_state as sync_state
+          from submissions s
+          join studies st on st.id = s.study_id
+          join form_versions fv on fv.id = s.form_version_id
+          join forms f on f.id = fv.form_id
+          left join participants p on p.id = s.participant_id
+         where s.collected_by = :userId
+           and s.deleted_at is null
+           and s.sync_state = 'UPLOADED'
+         order by s.collected_at desc
+         limit :limit
+        """,
+    )
+    public fun observeUploaded(userId: String, limit: Int = 100): Flow<List<QueuedSubmission>>
+
+    /** The most recent submissions in one study, whatever their state. Drives the Collect screen's Recent section. */
+    @Query(
+        """
+        select s.client_id as client_id,
+               s.study_id as study_id,
+               st.name as study_name,
+               f.code as form_code,
+               fv.version as version,
+               p.code as participant_code,
+               s.collected_at as collected_at,
+               s.sync_state as sync_state
+          from submissions s
+          join studies st on st.id = s.study_id
+          join form_versions fv on fv.id = s.form_version_id
+          join forms f on f.id = fv.form_id
+          left join participants p on p.id = s.participant_id
+         where s.collected_by = :userId
+           and s.study_id = :studyId
+           and s.deleted_at is null
+         order by s.collected_at desc
+         limit :limit
+        """,
+    )
+    public fun observeRecent(studyId: String, userId: String, limit: Int = 5): Flow<List<QueuedSubmission>>
+
+    /**
+     * `coalesce` because an aggregate over no rows is null, not zero, and a
+     * fresh device has no rows.
+     *
+     * It is belt-and-braces rather than the thing that saves this: Room reads a
+     * NULL column into a non-null `Int` as 0, so removing the `coalesce` does
+     * not currently fail `an empty device counts three zeroes` — checked, not
+     * assumed. It stays because the SQL should mean what it says, and because a
+     * future `Int?` or a different driver would make the difference real.
+     */
+    @Query(
+        """
+        select coalesce(sum(case when sync_state = 'QUEUED' then 1 else 0 end), 0) as queued,
+               coalesce(sum(case when sync_state = 'FAILED' then 1 else 0 end), 0) as failed,
+               coalesce(sum(case when sync_state = 'UPLOADED' then 1 else 0 end), 0) as uploaded
+          from submissions
+         where collected_by = :userId and deleted_at is null
+        """,
+    )
+    public fun observeCounts(userId: String): Flow<QueueCounts>
+
     /** What the sync worker drains. Oldest first, so a long queue leaves in order. */
     @Query(
         """

@@ -39,12 +39,12 @@ class SessionTest {
         }
     }
 
-    private fun session(userId: String? = ADAKU) = UserSession(
+    private fun session(userId: String? = ADAKU, email: String? = null) = UserSession(
         accessToken = "jwt",
         refreshToken = "refresh",
         expiresIn = 3600,
         tokenType = "bearer",
-        user = userId?.let { UserInfo(aud = "authenticated", id = it) },
+        user = userId?.let { UserInfo(aud = "authenticated", id = it, email = email) },
     )
 
     @Test
@@ -111,6 +111,66 @@ class SessionTest {
 
         assertNull(store.value)
         assertNull(manager.knownUserId.value)
+    }
+
+    /**
+     * The email is remembered for the same reason the id is, and it matters in
+     * the same situation: a device that cannot reach the server should still be
+     * able to say who is signed in to it, in the words that person would use.
+     */
+    @Test
+    fun `the email survives a load, so a failed refresh can still name the collector`() = runTest {
+        val store = RecordingStore()
+        StoredSessionManager(store).saveSession(session(email = "adaku@cairn.test"))
+
+        val manager = StoredSessionManager(store)
+        assertNull(manager.knownEmail.value)
+        manager.loadSessionOrNull()
+
+        assertEquals("adaku@cairn.test", manager.knownEmail.value)
+    }
+
+    @Test
+    fun `deleting the session forgets the email too`() = runTest {
+        val store = RecordingStore()
+        val manager = StoredSessionManager(store)
+        manager.saveSession(session(email = "adaku@cairn.test"))
+
+        manager.deleteSession()
+
+        assertNull(manager.knownEmail.value)
+    }
+
+    @Test
+    fun `an authenticated status carries the email alongside the id`() {
+        val state = sessionStateOf(
+            SessionStatus.Authenticated(session(email = "adaku@cairn.test")),
+            null,
+        )
+
+        assertEquals(SessionState.SignedIn(ADAKU, "adaku@cairn.test"), state)
+    }
+
+    @Test
+    fun `a stale session still knows the email it was signed in with`() {
+        val failure = SessionStatus.RefreshFailure(RefreshFailureCause.NetworkError(IOException("no route")))
+
+        val state = sessionStateOf(failure, ADAKU, "adaku@cairn.test")
+
+        assertEquals(SessionState.Stale(ADAKU, "adaku@cairn.test"), state)
+        assertEquals("adaku@cairn.test", state.email)
+    }
+
+    /**
+     * A session stored by an earlier build has no email in it, and the screen
+     * that reads it falls back rather than the state becoming unusable.
+     */
+    @Test
+    fun `a session with no email is still a signed-in session`() {
+        val state = sessionStateOf(SessionStatus.Authenticated(session()), null)
+
+        assertEquals(ADAKU, state.userId)
+        assertNull(state.email)
     }
 
     @Test

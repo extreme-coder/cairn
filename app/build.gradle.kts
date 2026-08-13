@@ -31,6 +31,7 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "app.cairn.CairnTestRunner"
 
         buildConfigField("String", "SUPABASE_URL", "\"${devProperty("cairn.supabase.url")}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${devProperty("cairn.supabase.key")}\"")
@@ -65,11 +66,13 @@ kotlin {
 dependencies {
     implementation(project(":feature:capture"))
     implementation(project(":feature:auth"))
+    implementation(project(":feature:collect"))
     implementation(project(":core:sync"))
     implementation(project(":core:session"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.core)
@@ -84,6 +87,19 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.sqlite.bundled.jvm)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.androidx.navigation.testing)
+    debugImplementation(libs.compose.ui.test.manifest)
+
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.navigation.testing)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.room.testing)
 }

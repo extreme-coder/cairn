@@ -6,15 +6,20 @@ import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import app.cairn.core.database.CairnDatabase
 import app.cairn.core.model.SyncState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import kotlin.time.Instant
 
 /**
  * The worker's own job is small: run the engine and turn what happens into a
@@ -27,17 +32,20 @@ class SyncWorkerTest {
 
     private lateinit var db: CairnDatabase
     private lateinit var remote: FakeRemote
+    private lateinit var log: RecordingLog
 
     @Before
     fun setUp() {
         db = testDatabase()
         remote = FakeRemote()
-        SyncDependencies.install(SyncEngine(db, remote, InMemoryCursors()))
+        log = RecordingLog()
+        SyncDependencies.install(SyncEngine(db, remote, InMemoryCursors()), log)
     }
 
     @After
     fun tearDown() {
         SyncDependencies.engine = null
+        SyncDependencies.log = null
         db.close()
     }
 
@@ -136,5 +144,53 @@ class SyncWorkerTest {
         SyncDependencies.engine = null
 
         assertTrue(run() is ListenableWorker.Result.Failure)
+    }
+
+    // ---- What Settings reads: when this device last synced ----
+
+    @Test
+    fun `a clean run records when it happened`() = runTest {
+        remote.seedStudy()
+
+        run()
+
+        assertNotNull(log.lastSyncedAt.first())
+    }
+
+    /**
+     * "Last synced" is read as "everything is up to date as of", so a run that
+     * could not send the queue must not set it. Otherwise Settings reassures a
+     * collector at the exact moment their observations are stuck on the device.
+     */
+    @Test
+    fun `a run that could not upload does not claim to have synced`() = runTest {
+        remote.seedStudy()
+        run()
+        db.submissions().upsert(queued())
+        log.forget()
+        remote.offline = true
+
+        assertTrue(run() is ListenableWorker.Result.Retry)
+        assertNull(log.lastSyncedAt.first())
+    }
+
+    @Test
+    fun `a signed-out run records nothing`() = runTest {
+        remote.currentUser = null
+
+        assertTrue(run() is ListenableWorker.Result.Success)
+        assertNull(log.lastSyncedAt.first())
+    }
+
+    private class RecordingLog : SyncLog {
+        private val state = MutableStateFlow<Instant?>(null)
+        override val lastSyncedAt: Flow<Instant?> = state
+        override suspend fun record(at: Instant) {
+            state.value = at
+        }
+
+        fun forget() {
+            state.value = null
+        }
     }
 }

@@ -12,8 +12,9 @@ import app.cairn.core.session.SessionRepository
 import app.cairn.core.session.cairnSessionStore
 import app.cairn.core.sync.SyncDependencies
 import app.cairn.core.sync.SyncEngine
+import app.cairn.core.sync.SyncLog
 import app.cairn.core.sync.SyncWorker
-import app.cairn.core.sync.cairnSyncCursors
+import app.cairn.core.sync.cairnSyncStores
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,9 +31,26 @@ import kotlinx.coroutines.launch
  * store, remote, cursors — which is more than there were and still fewer than
  * Koin is worth.
  */
-public class CairnApplication : Application() {
+public open class CairnApplication : Application() {
 
-    public val database: CairnDatabase by lazy {
+    /**
+     * Where this install points, and the key it presents.
+     *
+     * Open so a test can build the whole app graph without a server, which is
+     * not a contrivance: a machine with no `local.properties` builds exactly
+     * this app, and it is the path the Sign in screen's "Not configured" state
+     * exists for.
+     */
+    internal open val serverUrl: String get() = BuildConfig.SUPABASE_URL
+
+    internal open val serverKey: String get() = BuildConfig.SUPABASE_KEY
+
+    /**
+     * Open so an instrumented test can substitute an in-memory one. A device
+     * test that seeded the real `cairn.db` would be destroying whoever is
+     * signed in on that device's collected work to check a back stack.
+     */
+    public open val database: CairnDatabase by lazy {
         Room.databaseBuilder(this, CairnDatabase::class.java, CairnDatabase.NAME).build()
     }
 
@@ -53,32 +71,47 @@ public class CairnApplication : Application() {
         private set
 
     /**
+     * When this device last completed a sync. Null on a build with no server,
+     * which is also the only build where the answer would be "never" forever.
+     */
+    public var syncLog: SyncLog? = null
+        private set
+
+    /** What Settings shows under About. */
+    public val version: String
+        get() = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+
+    /**
      * What the Sign in screen shows in its Server field: the host, without the
      * scheme. Cairn is self-hosted per research group, so which server a
      * password is about to be handed to is worth stating — and the collector
      * reads a hostname, not a URL.
      */
     public val serverAddress: String
-        get() = BuildConfig.SUPABASE_URL
+        get() = serverUrl
             .substringAfter("://")
             .trimEnd('/')
 
     override fun onCreate() {
         super.onCreate()
 
-        if (BuildConfig.SUPABASE_URL.isEmpty()) {
+        if (serverUrl.isEmpty()) {
             Log.w(TAG, "no cairn.supabase.url in local.properties; running with no server")
             return
         }
 
         val stored = StoredSessionManager(cairnSessionStore(this))
         val remote = SupabaseRemoteDataSource(
-            cairnSupabaseClient(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, sessions = stored),
+            cairnSupabaseClient(serverUrl, serverKey, sessions = stored),
             stored,
         )
-        val cursors = cairnSyncCursors(this)
+        // Cursors and the last-synced time come as a pair because they share a
+        // file and are cleared together on sign-out.
+        val stores = cairnSyncStores(this)
+        val cursors = stores.cursors
+        syncLog = stores.log
 
-        SyncDependencies.install(SyncEngine(database, remote, cursors))
+        SyncDependencies.install(SyncEngine(database, remote, cursors), syncLog)
         SyncWorker.schedule(this)
 
         sessions = SessionRepository(remote, database, cursors)
