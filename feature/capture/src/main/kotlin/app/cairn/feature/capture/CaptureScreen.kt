@@ -30,6 +30,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -54,7 +55,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.cairn.core.designsystem.CairnIcons
 import app.cairn.core.designsystem.CairnTheme
+import app.cairn.core.designsystem.IconSize
 import app.cairn.core.designsystem.Spacing
 import app.cairn.core.model.FieldSpec
 import app.cairn.core.model.FieldType
@@ -248,7 +251,14 @@ private fun QueueBanner(count: Int) {
             .padding(Spacing.Large),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatusDot(MaterialTheme.colorScheme.tertiary)
+        Icon(
+            imageVector = CairnIcons.Upload,
+            // The same glyph the Queue tab and the Collect banner carry: one
+            // mark per concept, the way the voice guide keeps one word per one.
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(IconSize),
+        )
         Spacer(Modifier.size(Spacing.Medium))
         Text(
             text = "$count queued, uploading when you reconnect.",
@@ -256,16 +266,6 @@ private fun QueueBanner(count: Int) {
             modifier = Modifier.testTag("queue_banner"),
         )
     }
-}
-
-/** Status is never colour alone. The dot always travels with a word. */
-@Composable
-private fun StatusDot(color: Color) {
-    Box(
-        Modifier
-            .size(Spacing.Small)
-            .background(color, CircleShape),
-    )
 }
 
 @Composable
@@ -325,14 +325,24 @@ private fun FieldLabel(spec: FieldSpec) {
 private fun FieldFooter(spec: FieldSpec, error: String?) {
     val help = spec.help
     when {
+        // `DESIGN.md`: an error replaces the helper text, in the error colour,
+        // with an error icon. The sentence still carries the meaning — the mark
+        // is what makes it findable when a long form has one bad field in it.
         error != null -> Row(verticalAlignment = Alignment.Top) {
-            Box(Modifier.padding(top = 5.dp)) { StatusDot(MaterialTheme.colorScheme.error) }
+            Icon(
+                imageVector = CairnIcons.Alert,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(IconSize),
+            )
             Spacer(Modifier.size(Spacing.Small))
             Text(
                 text = error,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag("error_${spec.key}"),
+                modifier = Modifier
+                    .padding(top = 3.dp)
+                    .testTag("error_${spec.key}"),
             )
         }
         help != null -> Text(

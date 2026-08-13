@@ -2,15 +2,14 @@ package app.cairn.feature.auth
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -21,7 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import app.cairn.core.designsystem.CairnIcons
 import app.cairn.core.designsystem.CairnTheme
+import app.cairn.core.designsystem.IconSize
 import app.cairn.core.designsystem.Spacing
 
 /**
@@ -109,19 +110,22 @@ private fun PendingWarning(pending: Int) {
             .padding(Spacing.Large),
         verticalAlignment = Alignment.Top,
     ) {
-        Box(Modifier.padding(top = 5.dp)) {
-            Box(
-                Modifier
-                    .size(Spacing.Small)
-                    .background(MaterialTheme.colorScheme.tertiary, CircleShape),
-            )
-        }
+        Icon(
+            imageVector = CairnIcons.Alert,
+            // The sentence is the warning, and it is the thing that must be
+            // read before the button below it is pressed.
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(IconSize),
+        )
         Spacer(Modifier.size(Spacing.Medium))
         Text(
             text = "${pending.submissions()} not uploaded yet. " +
                 "Signing out deletes ${if (pending == 1) "it" else "them"} from this device.",
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.testTag("pending_warning"),
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .testTag("pending_warning"),
         )
     }
 }

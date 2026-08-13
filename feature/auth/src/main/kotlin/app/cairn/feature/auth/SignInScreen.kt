@@ -16,14 +16,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -38,8 +38,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import app.cairn.core.designsystem.CairnIcons
 import app.cairn.core.designsystem.CairnMark
 import app.cairn.core.designsystem.CairnTheme
+import app.cairn.core.designsystem.IconSize
 import app.cairn.core.designsystem.Spacing
 
 /**
@@ -119,13 +121,23 @@ public fun SignInScreen(
                     onImeAction = onSignIn,
                     masked = !state.revealPassword,
                     trailing = {
-                        // A word, not an eye. The app has no icon set, and a word
-                        // is also the larger target for someone wearing gloves.
-                        TextButton(onClick = onToggleReveal, modifier = Modifier.testTag("reveal")) {
-                            Text(
-                                text = if (state.revealPassword) "Hide" else "Show",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.secondary,
+                        // The eye states what tapping does, not what is
+                        // happening now: struck through means the password is
+                        // visible and this hides it. `IconButton` is 48dp, so
+                        // the target is no smaller than the word it replaced.
+                        IconButton(onClick = onToggleReveal, modifier = Modifier.testTag("reveal")) {
+                            Icon(
+                                imageVector = if (state.revealPassword) {
+                                    CairnIcons.EyeOff
+                                } else {
+                                    CairnIcons.Eye
+                                },
+                                contentDescription = if (state.revealPassword) {
+                                    "Hide password"
+                                } else {
+                                    "Show password"
+                                },
+                                tint = MaterialTheme.colorScheme.secondary,
                             )
                         }
                     },
@@ -260,23 +272,26 @@ private fun CairnTextField(
     )
 }
 
-/** Same shape as a field error on the capture screen: a dot, then the sentence. */
+/** Same shape as a field error on the capture screen: the mark, then the sentence. */
 @Composable
 private fun Problem(problem: SignInProblem) {
     Row(verticalAlignment = Alignment.Top) {
-        Box(Modifier.padding(top = 5.dp)) {
-            Box(
-                Modifier
-                    .size(Spacing.Small)
-                    .background(MaterialTheme.colorScheme.error, CircleShape),
-            )
-        }
+        Icon(
+            imageVector = CairnIcons.Alert,
+            // The sentence is the error. A screen reader saying "alert" first
+            // only delays it.
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(IconSize),
+        )
         Spacer(Modifier.size(Spacing.Small))
         Text(
             text = problem.message(),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.testTag("problem"),
+            modifier = Modifier
+                .padding(top = 3.dp)
+                .testTag("problem"),
         )
     }
 }

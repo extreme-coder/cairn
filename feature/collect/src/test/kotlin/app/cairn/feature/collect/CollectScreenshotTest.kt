@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onRoot
 import app.cairn.core.database.dao.QueueCounts
 import app.cairn.core.designsystem.CairnBottomBar
 import app.cairn.core.designsystem.CairnDestination
+import app.cairn.core.designsystem.CairnIcons
 import app.cairn.core.designsystem.CairnTheme
 import app.cairn.core.model.SyncState
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
@@ -141,18 +142,18 @@ class CollectScreenshotTest {
             ) {
                 CairnBottomBar(
                     destinations = listOf(
-                        CairnDestination("Collect"),
-                        CairnDestination("Queue", badge = 6),
-                        CairnDestination("Settings"),
+                        CairnDestination("Collect", CairnIcons.Form),
+                        CairnDestination("Queue", CairnIcons.Upload, badge = 6),
+                        CairnDestination("Settings", CairnIcons.Settings),
                     ),
                     selected = 0,
                     onSelect = {},
                 )
                 CairnBottomBar(
                     destinations = listOf(
-                        CairnDestination("Collect"),
-                        CairnDestination("Queue"),
-                        CairnDestination("Settings"),
+                        CairnDestination("Collect", CairnIcons.Form),
+                        CairnDestination("Queue", CairnIcons.Upload),
+                        CairnDestination("Settings", CairnIcons.Settings),
                     ),
                     selected = 1,
                     onSelect = {},

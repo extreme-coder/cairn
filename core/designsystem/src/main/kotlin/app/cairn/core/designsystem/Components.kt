@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -76,10 +79,10 @@ public fun CairnSectionHeading(
  * A list row: at least 72dp, a primary line, an optional second line of
  * metadata, and a trailing slot.
  *
- * There is no chevron. `DESIGN.md` draws one, but the app has no icon set and
- * hand-written path data is not something a reviewer can check — the same
- * decision the capture screen made about status icons. The whole row is the
- * target instead, which is also the larger one for someone wearing gloves.
+ * A row that goes somewhere ends in a chevron, the way `DESIGN.md` draws it.
+ * The whole row is still the target — the chevron is the sign, not the button,
+ * which keeps the target the large one for someone wearing gloves. A row with
+ * no [onClick] gets no chevron, so the queue's rows stay honestly inert.
  */
 @Composable
 public fun CairnListRow(
@@ -119,6 +122,17 @@ public fun CairnListRow(
         trailing?.let {
             Spacer(Modifier.size(Spacing.Medium))
             it()
+        }
+        if (onClick != null) {
+            Spacer(Modifier.size(Spacing.Small))
+            Icon(
+                imageVector = CairnIcons.ChevronRight,
+                // The row already announces itself; a second "go to" would be
+                // read out after every study name.
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(IconSize),
+            )
         }
     }
 }
@@ -184,12 +198,19 @@ public fun CairnChip(
  *
  * Never an apology, and only present when there is something to state — an
  * always-visible banner is furniture, and furniture stops being read.
+ *
+ * [icon] leads, the way `DESIGN.md` draws it. It defaults to [CairnIcons.Upload]
+ * rather than the wifi-off glyph the design names, because this banner is not
+ * an offline banner: it is raised by a non-empty queue whether or not there is
+ * a signal, and a struck-through aerial would be a claim about the network the
+ * app has not made.
  */
 @Composable
 public fun CairnBanner(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
+    icon: ImageVector = CairnIcons.Upload,
 ) {
     val accent = if (color == Color.Unspecified) MaterialTheme.colorScheme.tertiary else color
     Row(
@@ -200,7 +221,14 @@ public fun CairnBanner(
             .padding(Spacing.Large),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CairnDot(accent)
+        Icon(
+            imageVector = icon,
+            // The sentence beside it is the whole message. Naming the glyph too
+            // would have the banner read out twice.
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.size(IconSize),
+        )
         Spacer(Modifier.size(Spacing.Medium))
         Text(
             text = text,
@@ -241,17 +269,19 @@ public fun CairnStat(
 /** One destination in [CairnBottomBar]. [badge] is not drawn when it is zero. */
 public data class CairnDestination(
     public val label: String,
+    public val icon: ImageVector,
     public val badge: Int = 0,
 )
 
 /**
- * Bottom navigation: three or four destinations, labels always visible.
+ * Bottom navigation: three or four destinations, a Material Symbol over a label.
  *
- * Labels only. `DESIGN.md` pairs each with a Material Symbol, and the app still
- * has no icon set — a word alone is unambiguous where a hand-drawn glyph would
- * not be, and it is the larger target. The badge is a number, because the voice
- * guide says quantify: a dot would say "something" where the collector needs to
- * know "six".
+ * The label stays. `DESIGN.md` requires it — "labels always visible" — and the
+ * glyph is what makes the row scannable at arm's length, not what replaces the
+ * word. The badge is still a number, because the voice guide says quantify: a
+ * dot would say "something" where the collector needs to know "six". It sits on
+ * the icon's corner now rather than beside the word, so a two-digit queue stops
+ * shoving "Queue" off its centre.
  */
 @Composable
 public fun CairnBottomBar(
@@ -275,79 +305,141 @@ public fun CairnBottomBar(
         ) {
             destinations.forEachIndexed { index, destination ->
                 val active = index == selected
-                Row(
+                val tint = if (active) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.secondary
+                }
+                Column(
                     Modifier
                         .weight(1f)
                         .heightIn(min = NavItemHeight)
                         .clickable(onClick = { onSelect(index) })
-                        .padding(vertical = Spacing.Medium)
+                        .padding(vertical = Spacing.Small)
                         .testTag("nav_${destination.label.lowercase()}"),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = destination.icon,
+                            // The label is directly underneath and is what a
+                            // screen reader should say.
+                            contentDescription = null,
+                            tint = tint,
+                            modifier = Modifier.size(IconSize),
+                        )
+                        if (destination.badge > 0) {
+                            Text(
+                                text = destination.badge.toString(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier
+                                    .onIconCorner()
+                                    .background(MaterialTheme.colorScheme.tertiary, CircleShape)
+                                    .padding(horizontal = Spacing.Small, vertical = 1.dp)
+                                    .testTag("badge_${destination.label.lowercase()}"),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.size(Spacing.XSmall))
                     Text(
                         text = destination.label,
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontWeight = if (active) FontWeight(600) else FontWeight(500),
                         ),
-                        color = if (active) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.secondary
-                        },
+                        color = tint,
                     )
-                    if (destination.badge > 0) {
-                        Spacer(Modifier.size(Spacing.Small))
-                        Text(
-                            text = destination.badge.toString(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier
-                                .background(MaterialTheme.colorScheme.tertiary, CircleShape)
-                                .padding(horizontal = Spacing.Small, vertical = 1.dp)
-                                .testTag("badge_${destination.label.lowercase()}"),
-                        )
-                    }
                 }
             }
         }
     }
 }
 
+/**
+ * Hangs the badge off the icon's top-trailing corner without taking part in the
+ * measurement.
+ *
+ * Reporting zero size is the point: a plain offset would still let a two-digit
+ * badge widen the box it shares with the icon, which would drag the glyph — and
+ * the label under it — off the centre of its column. The parent centres a
+ * zero-sized node at the middle of the icon, so the offsets below are measured
+ * from there.
+ */
+private fun Modifier.onIconCorner(): Modifier = layout { measurable, constraints ->
+    val badge = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+    layout(0, 0) {
+        badge.place(x = BadgeInsetX.roundToPx(), y = -(IconSize / 2 + BadgeLiftY).roundToPx())
+    }
+}
+
 /** `DESIGN.md`: list rows are at least 72dp. */
 public val ListRowHeight: Dp = 72.dp
 
-private val NavItemHeight = 56.dp
+/** Icon over label needs more than a single line of text did. */
+private val NavItemHeight = 64.dp
+
+/** From the icon's centre: just past its right edge, just above its top. */
+private val BadgeInsetX = 2.dp
+private val BadgeLiftY = 6.dp
 
 private val DotSize = 10.dp
+
+/**
+ * Every component that carries an icon, in one place.
+ *
+ * Public because no screen owns the bottom bar and no screen shows a navigable
+ * row next to an inert one, so this is the only place the two can be compared —
+ * by a reviewer in the preview, and by `IconSheetScreenshotTest` in a PNG.
+ */
+@Composable
+public fun ComponentGallery(modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(Spacing.Gutter),
+        verticalArrangement = Arrangement.spacedBy(Spacing.Large),
+    ) {
+        CairnBanner("6 queued, uploading when you reconnect.")
+        CairnSectionHeading("Forms")
+        CairnCard {
+            CairnListRow(
+                primary = "Baseline intake",
+                secondary = "v3 · 12 fields",
+                onClick = {},
+                trailing = { CairnChip("Collector") },
+            )
+            CairnRowDivider()
+            CairnListRow(
+                primary = "KL-0148",
+                secondary = "Baseline intake v3 · 09:14",
+                mono = true,
+                trailing = { CairnStatus("Queued", MaterialTheme.colorScheme.tertiary) },
+            )
+        }
+        CairnBottomBar(
+            destinations = listOf(
+                CairnDestination("Collect", CairnIcons.Form),
+                CairnDestination("Queue", CairnIcons.Upload, badge = 6),
+                CairnDestination("Settings", CairnIcons.Settings),
+            ),
+            selected = 0,
+            onSelect = {},
+        )
+        CairnBottomBar(
+            destinations = listOf(
+                CairnDestination("Collect", CairnIcons.Form),
+                CairnDestination("Queue", CairnIcons.Upload, badge = 128),
+                CairnDestination("Settings", CairnIcons.Settings),
+            ),
+            selected = 1,
+            onSelect = {},
+        )
+    }
+}
 
 @Preview(widthDp = 390)
 @Composable
 private fun ComponentsPreview() {
-    CairnTheme {
-        Column(
-            Modifier
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(Spacing.Gutter),
-            verticalArrangement = Arrangement.spacedBy(Spacing.Large),
-        ) {
-            CairnBanner("Offline. 6 submissions are waiting to upload.")
-            CairnSectionHeading("Forms")
-            CairnCard {
-                CairnListRow(
-                    primary = "Baseline intake",
-                    secondary = "v3 · 12 fields",
-                    onClick = {},
-                    trailing = { CairnChip("Collector") },
-                )
-                CairnRowDivider()
-                CairnListRow(
-                    primary = "KL-0148",
-                    secondary = "Baseline intake v3 · 09:14",
-                    mono = true,
-                    trailing = { CairnStatus("Queued", MaterialTheme.colorScheme.tertiary) },
-                )
-            }
-        }
-    }
+    CairnTheme { ComponentGallery() }
 }

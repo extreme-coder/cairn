@@ -5,10 +5,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,6 +28,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import app.cairn.core.designsystem.CairnBottomBar
 import app.cairn.core.designsystem.CairnDestination
+import app.cairn.core.designsystem.CairnIcons
 import app.cairn.core.sync.SyncStatus
 import app.cairn.core.sync.SyncWorker
 import app.cairn.feature.capture.CaptureRepository
@@ -92,9 +93,9 @@ internal fun CairnNavHost(
             if (CairnDestinations.showsBottomBar(route)) {
                 CairnBottomBar(
                     destinations = listOf(
-                        CairnDestination("Collect"),
-                        CairnDestination("Queue", badge = counts.pending),
-                        CairnDestination("Settings"),
+                        CairnDestination("Collect", CairnIcons.Form),
+                        CairnDestination("Queue", CairnIcons.Upload, badge = counts.pending),
+                        CairnDestination("Settings", CairnIcons.Settings),
                     ),
                     selected = CairnDestinations.tabOf(route),
                     onSelect = { controller.switchTab(it) },
@@ -139,14 +140,14 @@ internal fun CairnNavHost(
                         studyId = arguments?.getString(CairnDestinations.ARG_STUDY).orEmpty(),
                         formId = arguments?.getString(CairnDestinations.ARG_FORM).orEmpty(),
                     ) {
-                        TextButton(
+                        IconButton(
                             onClick = { controller.popBackStack() },
                             modifier = Modifier.testTag("close"),
                         ) {
-                            Text(
-                                text = "Close",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.secondary,
+                            Icon(
+                                imageVector = CairnIcons.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.secondary,
                             )
                         }
                     }

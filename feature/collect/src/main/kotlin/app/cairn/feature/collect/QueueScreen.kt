@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -33,12 +35,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import app.cairn.core.designsystem.CairnCard
 import app.cairn.core.designsystem.CairnEmptyState
+import app.cairn.core.designsystem.CairnIcons
 import app.cairn.core.designsystem.CairnListRow
 import app.cairn.core.designsystem.CairnRowDivider
 import app.cairn.core.designsystem.CairnSectionHeading
 import app.cairn.core.designsystem.CairnStat
 import app.cairn.core.designsystem.CairnStatus
 import app.cairn.core.designsystem.CairnTheme
+import app.cairn.core.designsystem.IconSize
 import app.cairn.core.designsystem.Spacing
 import app.cairn.core.model.SyncState
 
@@ -136,6 +140,19 @@ private fun Body(state: QueueUiState, onToggleUploaded: () -> Unit) {
                     },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.size(Spacing.XSmall))
+                Icon(
+                    // Which way the section is about to move. The word beside it
+                    // already says which, so this is not a second announcement.
+                    imageVector = if (state.showingUploaded) {
+                        CairnIcons.ChevronUp
+                    } else {
+                        CairnIcons.ChevronDown
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(IconSize),
                 )
             }
             if (state.showingUploaded && state.uploaded.isNotEmpty()) {

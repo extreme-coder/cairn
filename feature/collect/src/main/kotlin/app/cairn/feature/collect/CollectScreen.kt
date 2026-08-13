@@ -17,10 +17,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +31,7 @@ import app.cairn.core.designsystem.CairnBanner
 import app.cairn.core.designsystem.CairnCard
 import app.cairn.core.designsystem.CairnChip
 import app.cairn.core.designsystem.CairnEmptyState
+import app.cairn.core.designsystem.CairnIcons
 import app.cairn.core.designsystem.CairnListRow
 import app.cairn.core.designsystem.CairnRowDivider
 import app.cairn.core.designsystem.CairnSectionHeading
@@ -93,9 +95,25 @@ private fun CollectAppBar(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = Spacing.Gutter, vertical = Spacing.Large),
+                .padding(
+                    start = Spacing.XSmall,
+                    end = Spacing.Gutter,
+                    top = Spacing.Medium,
+                    bottom = Spacing.Medium,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Leading, which is the only place an arrow can point from. It used
+            // to be the word "Studies" sitting at the trailing edge — where a
+            // left-pointing arrow would have been pointing at the study name.
+            // The destination is not lost: it is what the arrow announces.
+            IconButton(onClick = onBack, modifier = Modifier.testTag("back")) {
+                Icon(
+                    imageVector = CairnIcons.Back,
+                    contentDescription = "Studies",
+                    tint = MaterialTheme.colorScheme.secondary,
+                )
+            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.XSmall)) {
                 CairnSectionHeading("Study")
                 Text(
@@ -105,17 +123,8 @@ private fun CollectAppBar(
                 )
             }
             ready?.role?.let {
-                CairnChip(it.label, Modifier.testTag("role"))
                 Spacer(Modifier.size(Spacing.Small))
-            }
-            // The word, not a glyph: there is no icon set, and "Studies" says
-            // where back goes, which an arrow does not.
-            TextButton(onClick = onBack, modifier = Modifier.testTag("back")) {
-                Text(
-                    text = "Studies",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
+                CairnChip(it.label, Modifier.testTag("role"))
             }
             actions()
         }

@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -79,18 +80,24 @@ class SignInScreenTest {
         assertEquals(1, submits)
     }
 
-    /** The password is dots until asked for, and the ask is a word, not an icon. */
+    /**
+     * The password is dots until asked for.
+     *
+     * The toggle is an eye now, so what it offers is asserted through the
+     * content description rather than a visible word — which is also the only
+     * thing a collector using TalkBack ever had.
+     */
     @Test
     fun `the password is masked until it is revealed`() {
         compose.setContent { Harness() }
         compose.onNodeWithTag("password").performTextInput("cairn-dev-password")
 
-        compose.onNodeWithText("Show").assertIsDisplayed()
+        compose.onNodeWithTag("reveal").assertContentDescriptionEquals("Show password")
         compose.onNodeWithTag("password").assertTextContains("•".repeat("cairn-dev-password".length))
 
         compose.onNodeWithTag("reveal").performClick()
 
-        compose.onNodeWithText("Hide").assertIsDisplayed()
+        compose.onNodeWithTag("reveal").assertContentDescriptionEquals("Hide password")
         compose.onNodeWithTag("password").assertTextContains("cairn-dev-password")
     }
 
