@@ -77,7 +77,25 @@ public sealed interface CollectUiState {
         public val forms: List<FormRow>,
         public val recent: List<SubmissionRow>,
         public val pendingCount: Int,
-    ) : CollectUiState
+    ) : CollectUiState {
+
+        /**
+         * Whether this study offers the coordinator's two screens.
+         *
+         * Derived rather than stored, because it is a reading of the role and
+         * the role is already here — a second field could be set to disagree
+         * with it.
+         *
+         * A viewer gets them too. They read everything in the study and can
+         * change nothing, which is exactly what a review list without the lock
+         * and void buttons is; the buttons are gated separately on
+         * [StudyRole.showsLockAction]. A collector does not, because their own
+         * work is already the Recent list below and the Queue beside it, and a
+         * "Submissions" screen that showed them the same five rows under a
+         * different heading would be furniture.
+         */
+        public val canReview: Boolean get() = role?.showsAllSubmissions == true
+    }
 }
 
 public data class QueueUiState(

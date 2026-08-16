@@ -4,6 +4,7 @@ import app.cairn.core.model.StudyRole
 import app.cairn.core.model.SyncState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -361,5 +362,238 @@ class OverviewDaoTest {
         val rows = db.submissions().observeRecent(Ids.STUDY, Ids.ADAKU, limit = 2).first()
 
         assertEquals(listOf("c-3", "c-2"), rows.map { it.clientId })
+    }
+
+    // ---- ReviewSubmission ----
+
+    /**
+     * The one list in the app that is not scoped to the person reading it. What
+     * a device holds is already exactly what row-level security let this account
+     * pull, so the query says `where study_id` and nothing about a user.
+     */
+    @Test
+    fun `the review list holds every collector's rows, not only the reader's`() = runTest {
+        db.submissions().upsert(submission(clientId = "c-1", collectedBy = Ids.ADAKU))
+        db.submissions().upsert(submission(clientId = "c-2", collectedBy = Ids.TOMAS))
+
+        val rows = db.submissions().observeForReview(Ids.STUDY).first()
+
+        assertEquals(setOf(Ids.ADAKU, Ids.TOMAS), rows.map { it.collectedBy }.toSet())
+    }
+
+    /**
+     * Every other list filters `deleted_at is null`. This one deliberately does
+     * not: hiding a voided row would make a void look exactly like a delete to
+     * the person who performed it, on the only screen where the difference shows.
+     */
+    @Test
+    fun `a voided submission stays in the review list`() = runTest {
+        db.submissions().upsert(submission(clientId = "c-1", deletedAt = at(40)))
+
+        val row = db.submissions().observeForReview(Ids.STUDY).first().single()
+
+        assertEquals(at(40), row.deletedAt)
+        assertEquals("K-014", row.participantCode)
+    }
+
+    @Test
+    fun `the review list is one study's, newest first, and capped`() = runTest {
+        db.seedSecondStudy()
+        repeat(3) { index ->
+            db.submissions().upsert(submission(clientId = "c-$index", collectedAt = at(index)))
+        }
+        db.submissions().upsert(
+            submission(
+                clientId = "elsewhere",
+                studyId = Ids.OTHER_STUDY,
+                formVersionId = Ids.OTHER_VERSION,
+                participantId = Ids.OTHER_PARTICIPANT,
+            ),
+        )
+
+        assertEquals(
+            listOf("c-2", "c-1", "c-0"),
+            db.submissions().observeForReview(Ids.STUDY).first().map { it.clientId },
+        )
+        assertEquals(2, db.submissions().observeForReview(Ids.STUDY, limit = 2).first().size)
+    }
+
+    // ---- SubmissionDetail ----
+
+    /**
+     * The versioning ADR as a query. The row pins `form_version_id`, so the join
+     * reaches the schema it was collected under — not the form's current one,
+     * which would relabel an old observation silently.
+     */
+    @Test
+    fun `the detail reads the schema of the version the row pins`() = runTest {
+        db.forms().upsertVersions(
+            listOf(formVersion(id = Ids.VERSION_2, version = 2, schema = buildJsonObject { })),
+        )
+        db.submissions().upsert(submission(clientId = "c-1", formVersionId = Ids.VERSION_1))
+
+        val detail = db.submissions().observeDetail(Ids.ADAKU, "c-1").first()!!
+
+        assertEquals(1, detail.version)
+        assertEquals(bodyMassSchema, detail.schema)
+        assertEquals("Kestrel breeding survey", detail.studyName)
+        assertEquals("baseline_intake", detail.formCode)
+    }
+
+    @Test
+    fun `a submission this device does not hold has no detail`() = runTest {
+        assertNull(db.submissions().observeDetail(Ids.ADAKU, "nothing").first())
+    }
+
+    @Test
+    fun `the detail keeps a submission with no participant`() = runTest {
+        db.submissions().upsert(submission(clientId = "c-1", participantId = null))
+
+        assertNull(db.submissions().observeDetail(Ids.ADAKU, "c-1").first()!!.participantCode)
+    }
+
+    // ---- ReviewCounts ----
+
+    /**
+     * Disjoint on purpose. A summary whose three numbers sum to more than the
+     * table holds is one nobody checks twice.
+     */
+    @Test
+    fun `the counts do not double-count a row that is both locked and voided`() = runTest {
+        db.submissions().upsert(submission(clientId = "c-1"))
+        db.submissions().upsert(submission(clientId = "c-2", lockedAt = at(40)))
+        db.submissions().upsert(submission(clientId = "c-3", lockedAt = at(40), deletedAt = at(41)))
+
+        val counts = db.submissions().observeReviewCounts(Ids.STUDY).first()
+
+        assertEquals(2, counts.collected)
+        assertEquals(1, counts.locked)
+        assertEquals(1, counts.voided)
+        assertEquals(1, counts.unlocked)
+    }
+
+    @Test
+    fun `an empty study counts four zeroes rather than four nulls`() = runTest {
+        val counts = db.submissions().observeReviewCounts(Ids.STUDY).first()
+
+        assertEquals(0, counts.collected)
+        assertEquals(0, counts.locked)
+        assertEquals(0, counts.voided)
+        assertEquals(0, counts.participants)
+    }
+
+    @Test
+    fun `participants are counted once each, and a voided row contributes none`() = runTest {
+        db.seedSecondStudy()
+        db.submissions().upsert(submission(clientId = "c-1"))
+        db.submissions().upsert(submission(clientId = "c-2"))
+        db.submissions().upsert(submission(clientId = "c-3", participantId = null))
+        db.submissions().upsert(
+            submission(
+                clientId = "elsewhere",
+                studyId = Ids.OTHER_STUDY,
+                formVersionId = Ids.OTHER_VERSION,
+                participantId = Ids.OTHER_PARTICIPANT,
+            ),
+        )
+
+        assertEquals(1, db.submissions().observeReviewCounts(Ids.STUDY).first().participants)
+    }
+
+    // ---- ProgressDay ----
+
+    @Test
+    fun `progress groups by calendar day and skips voided rows`() = runTest {
+        db.submissions().upsert(submission(clientId = "c-1", collectedAt = at(0)))
+        db.submissions().upsert(submission(clientId = "c-2", collectedAt = at(60)))
+        db.submissions().upsert(submission(clientId = "c-3", collectedAt = at(0), deletedAt = at(90)))
+
+        val days = db.submissions().observeProgress(Ids.STUDY, zoneOffsetMillis = 0).first()
+
+        assertEquals(1, days.size)
+        assertEquals("2026-07-01", days.single().day)
+        assertEquals(2, days.single().submissions)
+        assertEquals(1, days.single().participants)
+    }
+
+    /**
+     * **The day boundary.** 06:00 UTC on 1 July is 23:00 on 30 June in
+     * Whitehorse. Grouping before applying the zone puts a transect walked
+     * yesterday evening onto today's bar, which is a lie the reader cannot catch
+     * from a chart.
+     */
+    @Test
+    fun `the offset decides which day a submission lands on`() = runTest {
+        db.submissions().upsert(submission(clientId = "c-1", collectedAt = at(-3 * 60)))
+
+        val utc = db.submissions().observeProgress(Ids.STUDY, zoneOffsetMillis = 0).first()
+        assertEquals("2026-07-01", utc.single().day)
+
+        val yukon = db.submissions()
+            .observeProgress(Ids.STUDY, zoneOffsetMillis = -7 * 60 * 60 * 1000L)
+            .first()
+        assertEquals("2026-06-30", yukon.single().day)
+    }
+
+    @Test
+    fun `progress is one study's, in day order`() = runTest {
+        db.seedSecondStudy()
+        db.submissions().upsert(submission(clientId = "c-late", collectedAt = at(48 * 60)))
+        db.submissions().upsert(submission(clientId = "c-early", collectedAt = at(0)))
+        db.submissions().upsert(
+            submission(
+                clientId = "elsewhere",
+                studyId = Ids.OTHER_STUDY,
+                formVersionId = Ids.OTHER_VERSION,
+                participantId = Ids.OTHER_PARTICIPANT,
+            ),
+        )
+
+        assertEquals(
+            listOf("2026-07-01", "2026-07-03"),
+            db.submissions().observeProgress(Ids.STUDY, zoneOffsetMillis = 0).first().map { it.day },
+        )
+    }
+
+    // ---- applyReview ----
+
+    @Test
+    fun `applying a review writes the server's values and leaves the queue alone`() = runTest {
+        db.submissions().upsert(submission(clientId = "c-1", syncState = SyncState.UPLOADED))
+
+        db.submissions().applyReview(
+            collectedBy = Ids.ADAKU,
+            clientId = "c-1",
+            lockedAt = at(90),
+            deletedAt = null,
+            updatedAt = at(91),
+        )
+
+        val row = db.submissions().observe(Ids.ADAKU, "c-1").first()!!
+        assertEquals(at(90), row.lockedAt)
+        assertEquals(at(91), row.updatedAt)
+        assertEquals(SyncState.UPLOADED, row.syncState)
+        assertTrue(db.submissions().pendingKeys().isEmpty())
+    }
+
+    @Test
+    fun `applying a restore clears deleted_at rather than leaving it set`() = runTest {
+        db.submissions().upsert(
+            submission(clientId = "c-1", deletedAt = at(40), syncState = SyncState.UPLOADED),
+        )
+
+        db.submissions().applyReview(Ids.ADAKU, "c-1", lockedAt = null, deletedAt = null, updatedAt = at(91))
+
+        assertNull(db.submissions().observe(Ids.ADAKU, "c-1").first()!!.deletedAt)
+    }
+
+    @Test
+    fun `applying a review touches one row, not every row of that collector`() = runTest {
+        db.submissions().upsert(submission(clientId = "c-1", syncState = SyncState.UPLOADED))
+        db.submissions().upsert(submission(clientId = "c-2", syncState = SyncState.UPLOADED))
+
+        db.submissions().applyReview(Ids.ADAKU, "c-1", lockedAt = at(90), deletedAt = null, updatedAt = at(91))
+
+        assertNull(db.submissions().observe(Ids.ADAKU, "c-2").first()!!.lockedAt)
     }
 }

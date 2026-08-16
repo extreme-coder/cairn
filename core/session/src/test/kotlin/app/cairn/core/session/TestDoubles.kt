@@ -14,6 +14,7 @@ import app.cairn.core.network.FormTranslationDto
 import app.cairn.core.network.FormVersionDto
 import app.cairn.core.network.ParticipantDto
 import app.cairn.core.network.RemoteDataSource
+import app.cairn.core.network.ReviewWriteOutcome
 import app.cairn.core.network.SessionState
 import app.cairn.core.network.SignInOutcome
 import app.cairn.core.network.StudyDto
@@ -160,4 +161,8 @@ internal class FakeRemote : RemoteDataSource {
     override suspend fun submissions(studyId: String, since: String?, limit: Int): List<SubmissionDto> = emptyList()
 
     override suspend fun push(submissions: List<SubmissionDto>): List<SubmissionDto> = emptyList()
+
+    override suspend fun lock(id: String, at: String): ReviewWriteOutcome = ReviewWriteOutcome.Unreachable
+
+    override suspend fun setVoided(id: String, at: String?): ReviewWriteOutcome = ReviewWriteOutcome.Unreachable
 }

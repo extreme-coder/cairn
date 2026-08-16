@@ -42,6 +42,13 @@ import app.cairn.feature.collect.SettingsScreen
 import app.cairn.feature.collect.SettingsViewModel
 import app.cairn.feature.collect.StudiesScreen
 import app.cairn.feature.collect.StudiesViewModel
+import app.cairn.feature.review.ProgressScreen
+import app.cairn.feature.review.ProgressViewModel
+import app.cairn.feature.review.ReviewRepository
+import app.cairn.feature.review.SubmissionDetailScreen
+import app.cairn.feature.review.SubmissionDetailViewModel
+import app.cairn.feature.review.SubmissionsScreen
+import app.cairn.feature.review.SubmissionsViewModel
 import kotlinx.coroutines.flow.map
 
 /**
@@ -129,6 +136,47 @@ internal fun CairnNavHost(
                         onForm = { formId ->
                             controller.navigate(CairnDestinations.capture(studyId, formId))
                         },
+                        onSubmissions = {
+                            controller.navigate(CairnDestinations.submissions(studyId))
+                        },
+                        onProgress = {
+                            controller.navigate(CairnDestinations.progress(studyId))
+                        },
+                        onBack = { controller.popBackStack() },
+                    )
+                }
+                composable(CairnDestinations.SUBMISSIONS_PATTERN) { backStackEntry ->
+                    val studyId = backStackEntry.arguments
+                        ?.getString(CairnDestinations.ARG_STUDY)
+                        .orEmpty()
+                    SubmissionsRoute(
+                        application = application,
+                        studyId = studyId,
+                        onSubmission = { collectedBy, clientId ->
+                            controller.navigate(
+                                CairnDestinations.submission(studyId, collectedBy, clientId),
+                            )
+                        },
+                        onBack = { controller.popBackStack() },
+                    )
+                }
+                composable(CairnDestinations.PROGRESS_PATTERN) { backStackEntry ->
+                    ProgressRoute(
+                        application = application,
+                        studyId = backStackEntry.arguments
+                            ?.getString(CairnDestinations.ARG_STUDY)
+                            .orEmpty(),
+                        onBack = { controller.popBackStack() },
+                    )
+                }
+                composable(CairnDestinations.SUBMISSION_PATTERN) { backStackEntry ->
+                    val arguments = backStackEntry.arguments
+                    SubmissionDetailRoute(
+                        application = application,
+                        userId = userId,
+                        studyId = arguments?.getString(CairnDestinations.ARG_STUDY).orEmpty(),
+                        collectedBy = arguments?.getString(CairnDestinations.ARG_COLLECTED_BY).orEmpty(),
+                        clientId = arguments?.getString(CairnDestinations.ARG_CLIENT).orEmpty(),
                         onBack = { controller.popBackStack() },
                     )
                 }
@@ -214,6 +262,8 @@ private fun CollectRoute(
     userId: String,
     studyId: String,
     onForm: (String) -> Unit,
+    onSubmissions: () -> Unit,
+    onProgress: () -> Unit,
     onBack: () -> Unit,
 ) {
     val database = application.database
@@ -233,7 +283,121 @@ private fun CollectRoute(
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    CollectScreen(state = state, onForm = onForm, onBack = onBack)
+    CollectScreen(
+        state = state,
+        onForm = onForm,
+        onBack = onBack,
+        onSubmissions = onSubmissions,
+        onProgress = onProgress,
+    )
+}
+
+/**
+ * The coordinator's list of everything collected in one study.
+ *
+ * It asks for `study_id` and nothing about who is reading it: the rows on the
+ * device are already what row-level security let this account pull, so a
+ * collector opening the same route would see only their own — which is why the
+ * route is only offered where the role affords it, and why offering it wrongly
+ * would leak nothing.
+ */
+@Composable
+private fun SubmissionsRoute(
+    application: CairnApplication,
+    studyId: String,
+    onSubmission: (String, String) -> Unit,
+    onBack: () -> Unit,
+) {
+    val database = application.database
+    val viewModel: SubmissionsViewModel = viewModel(
+        key = "submissions:$studyId",
+        factory = viewModelFactory {
+            initializer {
+                SubmissionsViewModel(
+                    studies = database.studies(),
+                    submissions = database.submissions(),
+                    studyId = studyId,
+                )
+            }
+        },
+    )
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    SubmissionsScreen(
+        state = state,
+        onSubmission = onSubmission,
+        onFilter = viewModel::select,
+        onBack = onBack,
+    )
+}
+
+@Composable
+private fun ProgressRoute(
+    application: CairnApplication,
+    studyId: String,
+    onBack: () -> Unit,
+) {
+    val database = application.database
+    val viewModel: ProgressViewModel = viewModel(
+        key = "progress:$studyId",
+        factory = viewModelFactory {
+            initializer {
+                ProgressViewModel(
+                    studies = database.studies(),
+                    submissions = database.submissions(),
+                    studyId = studyId,
+                )
+            }
+        },
+    )
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    ProgressScreen(state = state, onBack = onBack)
+}
+
+/**
+ * One submission, and the only route in the app that hands a feature the
+ * network.
+ *
+ * `application.remote` is null on a build with no server configured, and
+ * [ReviewRepository] answers every action offline in that case rather than this
+ * route branching on it.
+ */
+@Composable
+private fun SubmissionDetailRoute(
+    application: CairnApplication,
+    userId: String,
+    studyId: String,
+    collectedBy: String,
+    clientId: String,
+    onBack: () -> Unit,
+) {
+    val database = application.database
+    val viewModel: SubmissionDetailViewModel = viewModel(
+        key = "submission:$collectedBy/$clientId",
+        factory = viewModelFactory {
+            initializer {
+                SubmissionDetailViewModel(
+                    submissions = database.submissions(),
+                    members = database.members(),
+                    studyId = studyId,
+                    collectedBy = collectedBy,
+                    clientId = clientId,
+                    userId = userId,
+                    repository = ReviewRepository(database.submissions(), application.remote),
+                )
+            }
+        },
+    )
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    SubmissionDetailScreen(
+        state = state,
+        onAsk = viewModel::ask,
+        onConfirm = viewModel::confirm,
+        onDismiss = viewModel::dismiss,
+        onBack = onBack,
+    )
 }
 
 @Composable

@@ -95,3 +95,97 @@ public data class QueueCounts(
 
     public val total: Int get() = queued + failed + uploaded
 }
+
+/**
+ * One row of the coordinator's Submissions screen.
+ *
+ * Distinct from [QueuedSubmission] because the two screens ask different
+ * questions of the same table. A collector's queue asks "has this left the
+ * phone", so it carries a [SyncState] and hides nothing else. A review list asks
+ * "what has been done to this", so it carries [lockedAt] and [deletedAt] — and
+ * the server [id], because that is the only handle a lock or a void has.
+ *
+ * [id] is null for a row this device collected and has not yet pushed. That is
+ * what makes "not uploaded yet" a state the detail screen can state plainly
+ * rather than a button that fails when pressed.
+ */
+public data class ReviewSubmission(
+    @ColumnInfo(name = "collected_by") public val collectedBy: String,
+    @ColumnInfo(name = "client_id") public val clientId: String,
+    @ColumnInfo(name = "id") public val id: String?,
+    @ColumnInfo(name = "form_code") public val formCode: String,
+    @ColumnInfo(name = "version") public val version: Int,
+    @ColumnInfo(name = "participant_code") public val participantCode: String?,
+    @ColumnInfo(name = "collected_at") public val collectedAt: Instant,
+    @ColumnInfo(name = "locked_at") public val lockedAt: Instant?,
+    @ColumnInfo(name = "deleted_at") public val deletedAt: Instant?,
+    @ColumnInfo(name = "sync_state") public val syncState: SyncState,
+)
+
+/**
+ * One submission, with the schema it was collected under.
+ *
+ * [schema] comes from the version the row **pins**, not the form's current one.
+ * That is the versioning ADR arriving at the screen it was written for: a
+ * payload collected on v2 is read back against v2's labels, units and options,
+ * whatever v4 says today. Reading the current version here would relabel old
+ * observations silently, which is the failure mode versioning exists to prevent.
+ *
+ * Raw [JsonObject] for both [schema] and [data] for the same reason the table
+ * stores them that way: a field type this build has never heard of must fail one
+ * screen, not the query behind every screen.
+ */
+public data class SubmissionDetail(
+    @ColumnInfo(name = "collected_by") public val collectedBy: String,
+    @ColumnInfo(name = "client_id") public val clientId: String,
+    @ColumnInfo(name = "id") public val id: String?,
+    @ColumnInfo(name = "study_id") public val studyId: String,
+    @ColumnInfo(name = "study_name") public val studyName: String,
+    @ColumnInfo(name = "form_code") public val formCode: String,
+    @ColumnInfo(name = "version") public val version: Int,
+    @ColumnInfo(name = "schema") public val schema: JsonObject,
+    @ColumnInfo(name = "participant_code") public val participantCode: String?,
+    @ColumnInfo(name = "collected_at") public val collectedAt: Instant,
+    @ColumnInfo(name = "updated_at") public val updatedAt: Instant,
+    @ColumnInfo(name = "locked_at") public val lockedAt: Instant?,
+    @ColumnInfo(name = "deleted_at") public val deletedAt: Instant?,
+    @ColumnInfo(name = "sync_state") public val syncState: SyncState,
+    @ColumnInfo(name = "data") public val data: JsonObject,
+)
+
+/**
+ * One bar of the progress chart: a calendar day and what was collected on it.
+ *
+ * The device-side twin of the server's `v_study_progress` view, which a
+ * coordinator's pull cannot deliver — a view is not a table and there is no
+ * cursor over it. It does not need to be delivered: a coordinator's pull already
+ * brings every submission in the study down, so the same aggregate is available
+ * locally, and computing it here keeps Room the single source of truth rather
+ * than putting one screen on the network.
+ *
+ * [day] is `YYYY-MM-DD` because that is what SQLite's `date()` returns and what
+ * sorts correctly as text.
+ */
+public data class ProgressDay(
+    @ColumnInfo(name = "day") public val day: String,
+    @ColumnInfo(name = "n_submissions") public val submissions: Int,
+    @ColumnInfo(name = "n_participants") public val participants: Int,
+)
+
+/**
+ * The numbers above the progress chart.
+ *
+ * The three are deliberately disjoint: a voided row is not counted as collected,
+ * and a locked row is only counted as locked while it is not voided. Overlapping
+ * counts that sum to more than the table holds are how a summary stops being
+ * believed.
+ */
+public data class ReviewCounts(
+    @ColumnInfo(name = "collected") public val collected: Int,
+    @ColumnInfo(name = "locked") public val locked: Int,
+    @ColumnInfo(name = "voided") public val voided: Int,
+    @ColumnInfo(name = "participants") public val participants: Int,
+) {
+    /** What is still open to amendment — the number a coordinator is working through. */
+    public val unlocked: Int get() = collected - locked
+}

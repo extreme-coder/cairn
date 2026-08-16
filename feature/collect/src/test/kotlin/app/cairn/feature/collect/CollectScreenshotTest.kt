@@ -55,6 +55,14 @@ class CollectScreenshotTest {
         }
     }
 
+    /** The same study seen by someone who reviews it: the Review section appears. */
+    @Test
+    fun collect_as_coordinator() {
+        shoot("collect-coordinator") {
+            CollectScreen(previewCoordinatorCollect(), onForm = {}, onBack = {})
+        }
+    }
+
     @Test
     fun collect() {
         shoot("collect") { CollectScreen(previewCollect(), onForm = {}, onBack = {}) }

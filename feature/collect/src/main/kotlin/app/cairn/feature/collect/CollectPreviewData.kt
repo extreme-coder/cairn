@@ -57,6 +57,12 @@ internal fun previewCollect(): CollectUiState.Ready = CollectUiState.Ready(
     pendingCount = 6,
 )
 
+/** The same study seen by someone who reviews it: the Review section appears. */
+internal fun previewCoordinatorCollect(): CollectUiState.Ready = previewCollect().copy(
+    role = StudyRole.COORDINATOR,
+    pendingCount = 0,
+)
+
 internal fun previewQueue(): QueueUiState = QueueUiState(
     counts = QueueCounts(queued = 4, failed = 1, uploaded = 148),
     queued = listOf(

@@ -20,6 +20,26 @@ internal object CairnDestinations {
 
     const val CAPTURE_PATTERN = "capture/{studyId}/{formId}"
 
+    /**
+     * The coordinator's two screens, and one submission.
+     *
+     * All three sit inside the Collect stack rather than in a bar of their own.
+     * A role belongs to a study, not to a person, so which screens exist is a
+     * property of where you are standing — and the study is already the step
+     * above these.
+     */
+    const val SUBMISSIONS_PATTERN = "submissions/{studyId}"
+
+    const val PROGRESS_PATTERN = "progress/{studyId}"
+
+    /**
+     * Keyed the way a submission is keyed everywhere else on the device. The
+     * server's `id` would be shorter and would be null for a row this device
+     * collected and has not yet pushed — which is a row a coordinator may well
+     * be opening.
+     */
+    const val SUBMISSION_PATTERN = "submission/{studyId}/{collectedBy}/{clientId}"
+
     const val QUEUE = "queue"
 
     const val SETTINGS = "settings"
@@ -28,9 +48,20 @@ internal object CairnDestinations {
 
     const val ARG_FORM = "formId"
 
+    const val ARG_COLLECTED_BY = "collectedBy"
+
+    const val ARG_CLIENT = "clientId"
+
     fun study(studyId: String): String = "study/$studyId"
 
     fun capture(studyId: String, formId: String): String = "capture/$studyId/$formId"
+
+    fun submissions(studyId: String): String = "submissions/$studyId"
+
+    fun progress(studyId: String): String = "progress/$studyId"
+
+    fun submission(studyId: String, collectedBy: String, clientId: String): String =
+        "submission/$studyId/$collectedBy/$clientId"
 
     /**
      * Which bottom-navigation item is lit for a given route.
@@ -52,6 +83,11 @@ internal object CairnDestinations {
      * It has its own bottom bar carrying the one primary action, and a
      * collector filling in a form should not be one mis-tap from losing the
      * `client_id` they are working under.
+     *
+     * The review screens keep the bar. Their destructive action is behind a
+     * confirmation, so a mis-tap costs a dismissed dialog rather than an
+     * observation, and a coordinator who wanders into a study should not lose
+     * the way back to their own queue.
      */
     fun showsBottomBar(route: String?): Boolean = route != CAPTURE_PATTERN
 }

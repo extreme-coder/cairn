@@ -168,6 +168,90 @@ class CairnDatabaseInstrumentedTest {
         assertTrue(rows.all { it.syncState == SyncState.UPLOADED })
     }
 
+    /**
+     * `date(…, 'unixepoch')` is a SQLite date function, and the JVM suite runs
+     * a *different build* of SQLite from the one on the phone. A per-day
+     * aggregate that grouped differently on a device than on a laptop would be
+     * a chart that is wrong only in production.
+     */
+    @Test
+    fun progressGroupsByDayAgainstTheSqliteThatShips() = runTest {
+        db.submissions().upsert(submission("c-1", collectedAt = at(0)))
+        db.submissions().upsert(submission("c-2", collectedAt = at(60)))
+        db.submissions().upsert(submission("c-3", collectedAt = at(24 * 60)))
+        db.submissions().upsert(submission("c-void", collectedAt = at(0), deletedAt = at(90)))
+
+        val days = db.submissions().observeProgress(KLUANE, zoneOffsetMillis = 0).first()
+
+        assertEquals(listOf("2026-08-12", "2026-08-13"), days.map { it.day })
+        assertEquals(2, days.first().submissions)
+        assertEquals(1, days.first().participants)
+    }
+
+    /** Seven hours west puts an 02:00 observation on the day before. */
+    @Test
+    fun theZoneOffsetMovesADayBoundaryOnADevice() = runTest {
+        db.submissions().upsert(submission("c-1", collectedAt = at(-7 * 60)))
+
+        assertEquals(
+            "2026-08-11",
+            db.submissions()
+                .observeProgress(KLUANE, zoneOffsetMillis = -7 * 60 * 60 * 1000L)
+                .first()
+                .single()
+                .day,
+        )
+    }
+
+    /**
+     * `count(distinct case when … end)` over a table where every row is voided
+     * — an aggregate that has to return zero rather than null, on the engine
+     * that ships.
+     */
+    @Test
+    fun reviewCountsStayDisjointAndCountZeroWhenEverythingIsVoided() = runTest {
+        db.submissions().upsert(submission("c-1"))
+        db.submissions().upsert(submission("c-2", lockedAt = at(40)))
+        db.submissions().upsert(submission("c-3", lockedAt = at(40), deletedAt = at(41)))
+
+        val counts = db.submissions().observeReviewCounts(KLUANE).first()
+
+        assertEquals(2, counts.collected)
+        assertEquals(1, counts.locked)
+        assertEquals(1, counts.voided)
+        assertEquals(1, counts.participants)
+    }
+
+    /**
+     * The one list that keeps voided rows, and the left join to participants
+     * that has to keep its left side when a submission has none.
+     */
+    @Test
+    fun theReviewListKeepsVoidedRowsAndRowsWithNoParticipant() = runTest {
+        db.submissions().upsert(submission("c-1", collectedAt = at(10)))
+        db.submissions().upsert(submission("c-2", collectedAt = at(20), deletedAt = at(40)))
+        db.submissions().upsert(submission("c-3", collectedAt = at(30), participantId = null))
+        db.submissions().upsert(submission("c-4", collectedAt = at(40), collectedBy = TOMAS))
+
+        val rows = db.submissions().observeForReview(KLUANE).first()
+
+        assertEquals(listOf("c-4", "c-3", "c-2", "c-1"), rows.map { it.clientId })
+        assertNull(rows.single { it.clientId == "c-3" }.participantCode)
+        assertEquals(at(40), rows.single { it.clientId == "c-2" }.deletedAt)
+    }
+
+    @Test
+    fun theDetailJoinsTheVersionTheRowPinsAndSurvivesANullParticipant() = runTest {
+        db.submissions().upsert(submission("c-1", participantId = null))
+
+        val detail = db.submissions().observeDetail(ADAKU, "c-1").first()!!
+
+        assertEquals(3, detail.version)
+        assertEquals("baseline_intake", detail.formCode)
+        assertEquals("Kluane ground squirrel survey", detail.studyName)
+        assertNull(detail.participantCode)
+    }
+
     private suspend fun seed() {
         db.studies().upsert(
             listOf(StudyEntity(KLUANE, "Kluane ground squirrel survey", TOMAS, T0)),
@@ -192,6 +276,7 @@ class CairnDatabaseInstrumentedTest {
         collectedAt: Instant = at(14),
         syncState: SyncState = SyncState.QUEUED,
         deletedAt: Instant? = null,
+        lockedAt: Instant? = null,
     ) = SubmissionEntity(
         collectedBy = collectedBy,
         clientId = clientId,
@@ -200,6 +285,7 @@ class CairnDatabaseInstrumentedTest {
         participantId = participantId,
         collectedAt = collectedAt,
         data = buildJsonObject { put("body_mass", 268.0) },
+        lockedAt = lockedAt,
         updatedAt = collectedAt,
         deletedAt = deletedAt,
         syncState = syncState,

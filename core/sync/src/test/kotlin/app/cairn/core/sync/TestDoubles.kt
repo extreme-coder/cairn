@@ -9,6 +9,7 @@ import app.cairn.core.network.FormTranslationDto
 import app.cairn.core.network.FormVersionDto
 import app.cairn.core.network.ParticipantDto
 import app.cairn.core.network.RemoteDataSource
+import app.cairn.core.network.ReviewWriteOutcome
 import app.cairn.core.network.SessionState
 import app.cairn.core.network.SignInOutcome
 import app.cairn.core.network.StudyDto
@@ -173,6 +174,36 @@ internal class FakeRemote : RemoteDataSource {
             this.submissions += stored
             stored
         }
+    }
+
+    override suspend fun lock(id: String, at: String): ReviewWriteOutcome =
+        review(id) { it.copy(lockedAt = at) }
+
+    override suspend fun setVoided(id: String, at: String?): ReviewWriteOutcome =
+        review(id) { it.copy(deletedAt = at) }
+
+    /**
+     * The server's rules, not the caller's.
+     *
+     * A locked row matches no client UPDATE, and a row this server has never
+     * seen matches nothing either. Both come back as zero rows changed rather
+     * than as an error, which is what PostgREST actually does.
+     */
+    private fun review(
+        id: String,
+        change: (SubmissionDto) -> SubmissionDto,
+    ): ReviewWriteOutcome {
+        events += "review"
+        if (offline || pushOffline) return ReviewWriteOutcome.Unreachable
+
+        val existing = submissions.firstOrNull { it.id == id }
+        if (existing == null || existing.lockedAt != null) {
+            return ReviewWriteOutcome.Refused("no row was changed")
+        }
+        val stored = change(existing).copy(updatedAt = serverStamp())
+        submissions.remove(existing)
+        submissions += stored
+        return ReviewWriteOutcome.Applied(stored)
     }
 
     /** The server's clock, always later than any fixture and unrelated to the device's. */

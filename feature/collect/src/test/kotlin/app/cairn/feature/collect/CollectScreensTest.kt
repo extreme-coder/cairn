@@ -168,6 +168,70 @@ class CollectScreensTest {
         compose.onNodeWithTag("empty_heading").assertTextEquals("This study is gone")
     }
 
+    /**
+     * Review hangs off the study, not off a bottom bar, because a role is a row
+     * in `study_members` — the same person collects in one study and coordinates
+     * another, and a coordinator collects too.
+     *
+     * The unmerged tree, because a clickable row merges its descendants and the
+     * tag sits inside that merge. Asserting on the merged tree would make the
+     * absence below pass whether or not the section was drawn.
+     */
+    @Test
+    fun `a study you coordinate offers the review screens`() {
+        show { CollectScreen(state = previewCoordinatorCollect(), onForm = {}, onBack = {}) }
+
+        compose.onNodeWithTag("open_submissions", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("open_progress", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `a study you only collect in does not`() {
+        show { CollectScreen(state = previewCollect(), onForm = {}, onBack = {}) }
+
+        compose.onNodeWithTag("review", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("open_submissions", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    /**
+     * A viewer reads the whole study and changes none of it, which is exactly a
+     * review list without the buttons. The buttons are gated separately, on the
+     * detail screen.
+     */
+    @Test
+    fun `a viewer is offered them too`() {
+        show {
+            CollectScreen(
+                state = previewCollect().copy(role = app.cairn.core.model.StudyRole.VIEWER),
+                onForm = {},
+                onBack = {},
+            )
+        }
+
+        compose.onNodeWithTag("open_submissions", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `each review row goes to its own screen`() {
+        var submissions = 0
+        var progress = 0
+        show {
+            CollectScreen(
+                state = previewCoordinatorCollect(),
+                onForm = {},
+                onBack = {},
+                onSubmissions = { submissions++ },
+                onProgress = { progress++ },
+            )
+        }
+
+        compose.onNodeWithTag("open_submissions").performScrollTo().performClick()
+        compose.onNodeWithTag("open_progress").performScrollTo().performClick()
+
+        assertEquals(1, submissions)
+        assertEquals(1, progress)
+    }
+
     // ---- Queue ----
 
     @Test

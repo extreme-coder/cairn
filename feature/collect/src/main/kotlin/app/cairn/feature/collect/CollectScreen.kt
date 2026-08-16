@@ -54,6 +54,14 @@ public fun CollectScreen(
     onForm: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * The coordinator's two screens, reached from here rather than from a bottom
+     * bar of their own. Defaulted so a preview or a test that is not about review
+     * does not have to name them; `:app` wires both and `CairnNavHostTest`
+     * asserts that it did.
+     */
+    onSubmissions: () -> Unit = {},
+    onProgress: () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Scaffold(
@@ -74,7 +82,7 @@ public fun CollectScreen(
                     heading = "This study is gone",
                     body = "It was removed from this device. Go back to your studies.",
                 )
-                is CollectUiState.Ready -> Ready(state, onForm)
+                is CollectUiState.Ready -> Ready(state, onForm, onSubmissions, onProgress)
             }
         }
     }
@@ -133,7 +141,12 @@ private fun CollectAppBar(
 }
 
 @Composable
-private fun Ready(state: CollectUiState.Ready, onForm: (String) -> Unit) {
+private fun Ready(
+    state: CollectUiState.Ready,
+    onForm: (String) -> Unit,
+    onSubmissions: () -> Unit,
+    onProgress: () -> Unit,
+) {
     Column(
         Modifier.padding(Spacing.Gutter),
         verticalArrangement = Arrangement.spacedBy(Spacing.Large),
@@ -176,6 +189,38 @@ private fun Ready(state: CollectUiState.Ready, onForm: (String) -> Unit) {
             }
         }
 
+        /*
+         * Review lives inside the study, not in the bottom bar.
+         *
+         * `DESIGN.md` draws a coordinator's own bar — Submissions · Progress ·
+         * Forms · Settings — and that would be right if a person had one role.
+         * A role is a row in `study_members`, so the same person can coordinate
+         * one study and collect in another, and a coordinator collects too:
+         * insert is allowed for pi, coordinator and collector alike. Swapping
+         * the bar on entering a study would take Collect and Queue away from the
+         * person most likely to be standing in a field with them. Reviewing is
+         * something done *to* a study, so it hangs off the study.
+         */
+        if (state.canReview) {
+            Spacer(Modifier.height(Spacing.Small))
+            CairnSectionHeading("Review")
+            CairnCard(Modifier.testTag("review")) {
+                CairnListRow(
+                    primary = "Submissions",
+                    secondary = "Everything collected in this study",
+                    onClick = onSubmissions,
+                    modifier = Modifier.testTag("open_submissions"),
+                )
+                CairnRowDivider()
+                CairnListRow(
+                    primary = "Progress",
+                    secondary = "How much has been collected, by day",
+                    onClick = onProgress,
+                    modifier = Modifier.testTag("open_progress"),
+                )
+            }
+        }
+
         if (state.recent.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.Small))
             CairnSectionHeading("Recent")
@@ -195,6 +240,14 @@ private fun Ready(state: CollectUiState.Ready, onForm: (String) -> Unit) {
 private fun CollectPreview() {
     CairnTheme {
         CollectScreen(state = previewCollect(), onForm = {}, onBack = {})
+    }
+}
+
+@Preview(name = "Collect as coordinator", widthDp = 390, heightDp = 900)
+@Composable
+private fun CollectCoordinatorPreview() {
+    CairnTheme {
+        CollectScreen(state = previewCoordinatorCollect(), onForm = {}, onBack = {})
     }
 }
 

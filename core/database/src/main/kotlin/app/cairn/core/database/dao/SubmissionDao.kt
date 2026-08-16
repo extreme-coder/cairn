@@ -159,6 +159,150 @@ public interface SubmissionDao {
     )
     public fun observeCounts(userId: String): Flow<QueueCounts>
 
+    /**
+     * The coordinator's Submissions screen: everything in one study, whoever
+     * collected it.
+     *
+     * **Voided rows are not filtered out**, which is the one thing that makes
+     * this query different from every other list in the app. Voiding excludes a
+     * submission from analysis and keeps the row; hiding it here would make a
+     * void look exactly like a delete to the person who performed it, and the
+     * promise that nothing is ever hard-deleted would be invisible on the only
+     * screen where it matters.
+     *
+     * Limited for the same reason the uploaded half of the Queue is: a study
+     * three seasons in holds thousands and a review list is read from the top.
+     */
+    @Query(
+        """
+        select s.collected_by as collected_by,
+               s.client_id as client_id,
+               s.id as id,
+               f.code as form_code,
+               fv.version as version,
+               p.code as participant_code,
+               s.collected_at as collected_at,
+               s.locked_at as locked_at,
+               s.deleted_at as deleted_at,
+               s.sync_state as sync_state
+          from submissions s
+          join form_versions fv on fv.id = s.form_version_id
+          join forms f on f.id = fv.form_id
+          left join participants p on p.id = s.participant_id
+         where s.study_id = :studyId
+         order by s.collected_at desc
+         limit :limit
+        """,
+    )
+    public fun observeForReview(studyId: String, limit: Int = 200): Flow<List<ReviewSubmission>>
+
+    /**
+     * One submission and the schema it was collected under.
+     *
+     * Keyed the way every local reference to a submission is keyed, because the
+     * server's `id` is null until a push comes back and a coordinator may be
+     * looking at a row they collected themselves this morning.
+     */
+    @Query(
+        """
+        select s.collected_by as collected_by,
+               s.client_id as client_id,
+               s.id as id,
+               s.study_id as study_id,
+               st.name as study_name,
+               f.code as form_code,
+               fv.version as version,
+               fv.schema as schema,
+               p.code as participant_code,
+               s.collected_at as collected_at,
+               s.updated_at as updated_at,
+               s.locked_at as locked_at,
+               s.deleted_at as deleted_at,
+               s.sync_state as sync_state,
+               s.data as data
+          from submissions s
+          join studies st on st.id = s.study_id
+          join form_versions fv on fv.id = s.form_version_id
+          join forms f on f.id = fv.form_id
+          left join participants p on p.id = s.participant_id
+         where s.collected_by = :collectedBy and s.client_id = :clientId
+        """,
+    )
+    public fun observeDetail(collectedBy: String, clientId: String): Flow<SubmissionDetail?>
+
+    /**
+     * Submissions per calendar day, mirroring the server's `v_study_progress`.
+     *
+     * [zoneOffsetMillis] shifts the instant before the day is taken, so a
+     * transect walked at 18:00 in Whitehorse lands on the day it was walked
+     * rather than on the next one in UTC. Comparing before applying the zone is
+     * the same mistake `collectedLabel` guards against, and it is the kind a
+     * reader cannot catch from the chart.
+     *
+     * The offset is a parameter rather than SQLite's `localtime` modifier so the
+     * query is deterministic under test, and because `localtime` would read the
+     * process's zone from inside the database, which is not somewhere a timezone
+     * should be coming from. One offset for the whole range means a daylight
+     * saving change inside the window shifts an hour of observations onto the
+     * neighbouring day; over a fourteen-day chart that is at most one bar off by
+     * a fraction, and the fix if it ever matters is grouping in Kotlin.
+     */
+    @Query(
+        """
+        select date((s.collected_at + :zoneOffsetMillis) / 1000, 'unixepoch') as day,
+               count(*) as n_submissions,
+               count(distinct s.participant_id) as n_participants
+          from submissions s
+         where s.study_id = :studyId and s.deleted_at is null
+         group by day
+         order by day
+        """,
+    )
+    public fun observeProgress(studyId: String, zoneOffsetMillis: Long): Flow<List<ProgressDay>>
+
+    /** The three numbers above the chart. Counted by the database, not by `.size`. */
+    @Query(
+        """
+        select coalesce(sum(case when deleted_at is null then 1 else 0 end), 0) as collected,
+               coalesce(sum(case when locked_at is not null and deleted_at is null then 1 else 0 end), 0) as locked,
+               coalesce(sum(case when deleted_at is not null then 1 else 0 end), 0) as voided,
+               count(distinct case when deleted_at is null then participant_id end) as participants
+          from submissions
+         where study_id = :studyId
+        """,
+    )
+    public fun observeReviewCounts(studyId: String): Flow<ReviewCounts>
+
+    /**
+     * Writes back what the server echoed after a lock, a void or a restore.
+     *
+     * **`sync_state` is deliberately untouched.** The server has already applied
+     * the change — that is where these values came from — so the row is not
+     * pending anything. Marking it `QUEUED` would put the coordinator's copy of
+     * the payload into the next push under the *collector's*
+     * `(collected_by, client_id)` key, which is exactly the clobber that writing
+     * one column over HTTP exists to avoid.
+     *
+     * [updatedAt] is the server's, for the same reason [markUploaded] takes it:
+     * it is what last-write-wins compares and the device never gets to write it.
+     */
+    @Query(
+        """
+        update submissions
+           set locked_at = :lockedAt,
+               deleted_at = :deletedAt,
+               updated_at = :updatedAt
+         where collected_by = :collectedBy and client_id = :clientId
+        """,
+    )
+    public suspend fun applyReview(
+        collectedBy: String,
+        clientId: String,
+        lockedAt: Instant?,
+        deletedAt: Instant?,
+        updatedAt: Instant,
+    )
+
     /** What the sync worker drains. Oldest first, so a long queue leaves in order. */
     @Query(
         """

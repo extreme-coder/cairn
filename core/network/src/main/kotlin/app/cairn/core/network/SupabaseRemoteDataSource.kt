@@ -16,6 +16,9 @@ import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.IOException
 
 /**
@@ -156,6 +159,61 @@ public class SupabaseRemoteDataSource(
             onConflict = "collected_by,client_id"
             select()
         }.decodeList()
+    }
+
+    override suspend fun lock(id: String, at: String): ReviewWriteOutcome =
+        review(id, buildJsonObject { put("locked_at", at) })
+
+    override suspend fun setVoided(id: String, at: String?): ReviewWriteOutcome =
+        review(id, buildJsonObject { put("deleted_at", at) })
+
+    /**
+     * One column, by server id, and read back what was stored.
+     *
+     * A partial update rather than an upsert of the whole row. The row being
+     * changed was collected by someone else and is being amended from a copy
+     * this device pulled; sending [SubmissionDto.data] back with it would
+     * overwrite an amendment made in the seconds since that pull, and
+     * last-write-wins would call it correct.
+     *
+     * **An empty result is a refusal, not a success.** Postgres must SELECT a
+     * row before it can UPDATE it, so an UPDATE that matches no policy affects
+     * zero rows and returns `200 []` — no error anywhere. That silent-UPDATE
+     * trap is what assertions 13, 20 and 23 of the role matrix exist for on the
+     * server side; this is the client side of the same hazard, and reporting it
+     * as success would tell a coordinator a submission was locked when it was
+     * not.
+     */
+    private suspend fun review(id: String, patch: JsonObject): ReviewWriteOutcome = try {
+        val stored = client.from("submissions").update(patch) {
+            select()
+            filter { eq("id", id) }
+        }.decodeList<SubmissionDto>().firstOrNull()
+
+        if (stored != null) {
+            ReviewWriteOutcome.Applied(stored)
+        } else {
+            ReviewWriteOutcome.Refused(NOT_PERMITTED)
+        }
+    } catch (refused: RestException) {
+        ReviewWriteOutcome.Refused(refused.description ?: refused.error)
+    } catch (_: IOException) {
+        ReviewWriteOutcome.Unreachable
+    }
+
+    private companion object {
+        /**
+         * What zero affected rows means, in the words the reader needs.
+         *
+         * Three causes produce it — the row is already locked, this account is
+         * not a PI or coordinator in the study, or the row is not on the server
+         * yet — and the client cannot tell them apart from an empty array. The
+         * sentence names the two the reader can act on rather than guessing at
+         * one.
+         */
+        const val NOT_PERMITTED =
+            "The server did not change this submission. It may already be locked, " +
+                "or your role in this study may not allow it."
     }
 }
 

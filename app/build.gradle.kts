@@ -67,6 +67,7 @@ dependencies {
     implementation(project(":feature:capture"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:collect"))
+    implementation(project(":feature:review"))
     implementation(project(":core:sync"))
     implementation(project(":core:session"))
 

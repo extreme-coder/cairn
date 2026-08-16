@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.room.Room
 import app.cairn.core.database.CairnDatabase
+import app.cairn.core.network.RemoteDataSource
 import app.cairn.core.network.SessionState
 import app.cairn.core.network.StoredSessionManager
 import app.cairn.core.network.SupabaseRemoteDataSource
@@ -71,6 +72,17 @@ public open class CairnApplication : Application() {
         private set
 
     /**
+     * The server, for the one feature that writes to it directly.
+     *
+     * Everything else reaches the network through `:core:sync`, which drains
+     * Room. Review cannot: a lock is a one-column write to a row this device
+     * does not own, and queuing it would mean pushing a whole submission under
+     * someone else's key. See `ReviewRepository`.
+     */
+    public var remote: RemoteDataSource? = null
+        private set
+
+    /**
      * When this device last completed a sync. Null on a build with no server,
      * which is also the only build where the answer would be "never" forever.
      */
@@ -105,6 +117,7 @@ public open class CairnApplication : Application() {
             cairnSupabaseClient(serverUrl, serverKey, sessions = stored),
             stored,
         )
+        this.remote = remote
         // Cursors and the last-synced time come as a pair because they share a
         // file and are cleared together on sign-out.
         val stores = cairnSyncStores(this)

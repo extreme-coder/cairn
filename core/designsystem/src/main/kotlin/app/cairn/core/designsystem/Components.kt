@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -177,17 +179,51 @@ public fun CairnDot(color: Color, modifier: Modifier = Modifier) {
     )
 }
 
-/** Full radius, hairline outline, 13px label. Role chips are outline-only. */
+/**
+ * Full radius, hairline outline, 13px label.
+ *
+ * Two jobs, and `DESIGN.md` gives them the same shape. A role chip is a label —
+ * no [onClick], outline-only, and it stays that way. A filter chip is a control,
+ * and fills with primary container when [selected], which is the design's own
+ * rule for the selected state.
+ *
+ * A selected chip carries `Selected, ` in its description rather than relying on
+ * the fill, because the fill is the thing someone reading this by ear cannot see
+ * and status is never colour alone.
+ */
 @Composable
 public fun CairnChip(
     label: String,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     Text(
         text = label,
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
         modifier = modifier
+            .then(
+                if (onClick != null) {
+                    Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onClick)
+                        .semantics { if (selected) contentDescription = "Selected, $label" }
+                } else {
+                    Modifier
+                },
+            )
+            .then(
+                if (selected) {
+                    Modifier.background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                } else {
+                    Modifier
+                },
+            )
             .border(Spacing.Hairline, MaterialTheme.colorScheme.outline, CircleShape)
             .padding(horizontal = Spacing.Medium, vertical = 3.dp),
     )
@@ -401,6 +437,13 @@ public fun ComponentGallery(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(Spacing.Large),
     ) {
         CairnBanner("6 queued, uploading when you reconnect.")
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
+            CairnChip("All", selected = true, onClick = {})
+            CairnChip("Open", onClick = {})
+            CairnChip("Locked", onClick = {})
+            CairnChip("Coordinator")
+        }
+        CairnBarChart(bars = sampleBars(), caption = "Submissions per day · last 14 days")
         CairnSectionHeading("Forms")
         CairnCard {
             CairnListRow(

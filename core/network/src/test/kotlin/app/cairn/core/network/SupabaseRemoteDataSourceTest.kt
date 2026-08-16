@@ -10,6 +10,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -43,6 +44,22 @@ class SupabaseRemoteDataSourceTest {
     }
 
     private val last: HttpRequestData get() = requests.last()
+
+    /** One row as PostgREST returns it after `Prefer: return=representation`. */
+    private fun stored(lockedAt: String? = null, deletedAt: String? = null): String =
+        """
+        [{"id":"99999999-9999-9999-9999-999999999999",
+          "study_id":"11111111-1111-1111-1111-111111111111",
+          "form_version_id":"33333333-3333-3333-3333-333333333332",
+          "participant_id":null,
+          "collected_by":"55555555-5555-5555-5555-555555555551",
+          "client_id":"cccccccc-0000-0000-0000-000000000001",
+          "collected_at":"2026-07-01T09:30:00+00:00",
+          "data":{"body_mass":268.0},
+          "locked_at":${lockedAt?.let { "\"$it\"" } ?: "null"},
+          "updated_at":"2026-08-13T10:31:02.456789+00:00",
+          "deleted_at":${deletedAt?.let { "\"$it\"" } ?: "null"}}]
+        """.trimIndent()
 
     private fun lastBody(): String = (last.body as TextContent).text
 
@@ -163,6 +180,77 @@ class SupabaseRemoteDataSourceTest {
         remote.translations(emptyList())
 
         assertTrue(requests.isEmpty())
+    }
+
+    /**
+     * A locked row is one column, addressed by the server's id. Sending the
+     * whole row back would overwrite an amendment made in the seconds since this
+     * device pulled its copy, and last-write-wins would call that correct.
+     */
+    @Test
+    fun `a lock patches only locked_at, by server id`() = runTest {
+        source(stored(lockedAt = "2026-08-13T10:15:00+00:00"))
+            .lock("99999999-9999-9999-9999-999999999999", "2026-08-13T10:15:00+00:00")
+
+        assertEquals("PATCH", last.method.value)
+        assertContains(last.url.toString(), "id=eq.99999999-9999-9999-9999-999999999999")
+        assertContains(lastBody(), "locked_at")
+        assertFalse(lastBody().contains("\"data\""), "body was: ${lastBody()}")
+        assertFalse(lastBody().contains("client_id"), "body was: ${lastBody()}")
+    }
+
+    @Test
+    fun `a void sets deleted_at and a restore clears it`() = runTest {
+        val remote = source(stored())
+
+        remote.setVoided("99999999-9999-9999-9999-999999999999", "2026-08-13T10:15:00+00:00")
+        assertContains(lastBody(), "\"deleted_at\":\"2026-08-13T10:15:00+00:00\"")
+
+        remote.setVoided("99999999-9999-9999-9999-999999999999", null)
+        assertContains(lastBody(), "\"deleted_at\":null")
+        assertFalse(lastBody().contains("locked_at"), "body was: ${lastBody()}")
+    }
+
+    @Test
+    fun `a review write asks for the stored row back`() = runTest {
+        val outcome = source(stored(lockedAt = "2026-08-13T10:15:00+00:00"))
+            .lock("99999999-9999-9999-9999-999999999999", "2026-08-13T10:15:00+00:00")
+
+        val prefer = last.headers.getAll(HttpHeaders.Prefer).orEmpty().joinToString(",")
+        assertContains(prefer, "return=representation")
+
+        val applied = outcome as ReviewWriteOutcome.Applied
+        assertEquals("2026-08-13T10:15:00+00:00", applied.submission.lockedAt)
+        assertEquals("2026-08-13T10:31:02.456789+00:00", applied.submission.updatedAt)
+    }
+
+    /**
+     * The silent-UPDATE trap, client side.
+     *
+     * Postgres must SELECT a row before it can UPDATE it, so an UPDATE matching
+     * no policy affects zero rows and comes back `200 []` with no error. Reading
+     * that as success would tell a coordinator a submission was locked when the
+     * server declined to lock it.
+     */
+    @Test
+    fun `a review write that changes no rows is a refusal, not a success`() = runTest {
+        val outcome = source("[]").lock("99999999-9999-9999-9999-999999999999", "2026-08-13T10:15:00+00:00")
+
+        val refused = outcome as ReviewWriteOutcome.Refused
+        assertContains(refused.reason, "already be locked")
+    }
+
+    @Test
+    fun `a server that cannot be reached is not the same answer as one that refused`() = runTest {
+        val engine = MockEngine { throw IOException("no route to host") }
+        val remote = SupabaseRemoteDataSource(
+            cairnSupabaseClient("https://example.supabase.co", "sb_publishable_test", engine),
+        )
+
+        assertEquals(
+            ReviewWriteOutcome.Unreachable,
+            remote.setVoided("99999999-9999-9999-9999-999999999999", null),
+        )
     }
 
     @Test
